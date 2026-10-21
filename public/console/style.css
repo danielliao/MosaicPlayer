@@ -1053,3 +1053,5 @@ a {
 .dialog-header h2 {
   min-width: 0;
 }
+/* AI and simulation share the console cards and dialog primitives. */
+.ai-models{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px;margin:20px 0}.ai-card{padding:18px;margin-bottom:14px;overflow-wrap:anywhere}.ai-card button{margin:4px}.ai-result{white-space:pre-wrap;overflow-wrap:anywhere;max-height:400px;overflow:auto}.playback-preview{width:100%}.preview-stage{position:relative;width:100%;background:#111;overflow:hidden;min-height:80px}.preview-screen{position:absolute;overflow:hidden;background:#222}.preview-screen-label{position:absolute;bottom:0;left:0;color:white;background:#0009;padding:3px 6px;font-size:12px;z-index:1}.page>textarea{width:100%;resize:vertical}.user-menu select{width:auto;min-width:80px}.ai-card pre{max-width:100%}@media(max-width:640px){.ai-models{grid-template-columns:1fr}.dialog-body{padding:14px}.user-menu{flex-wrap:wrap}.page .field{min-width:0}.preview-screen-label{font-size:10px}}

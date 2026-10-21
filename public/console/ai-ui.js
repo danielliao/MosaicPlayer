@@ -1,0 +1,37 @@
+// All remote/user strings enter through text nodes. No HTML rendering of provider output.
+export async function renderAI(page,h) {
+ const {el,button,field,input,select,dialog,get,post,put,del,platform,admin,locale,refresh}=h;
+ const s=(zh,en)=>locale==='en'?en:zh;
+ const error=e=>page.append(el('div',{class:'error',role:'alert'},e.message));
+ const run=fn=>async()=>{try{await fn();}catch(e){error(e);}};
+ page.append(el('h1',{},s('AI 创作与模型','AI studio & models')));
+ try {
+ const data=await get('/api/ai/models');
+ page.append(el('p',{class:data.enabled?'muted':'service-banner'},data.enabled?s('外部生成已开启；提交会消耗额度。','External generation enabled; submissions consume quota.'):s('服务器 AI 已关闭。可管理配置，无法提交生成。','Server AI is disabled. Configuration is available; generation is unavailable.')));
+ const models=data.models||[];
+ function edit(model={}){
+ const name=input(model.name),provider=select(['compatible','minimax','gateway'].map(x=>[x,x]),model.provider||'compatible'),kind=select(['text','image','music','video'].map(x=>[x,x]),model.kind||'text'),identifier=input(model.model),base=input(model.baseUrl,'url'),secret=input('','password',{autocomplete:'new-password'}),enabled=input('','checkbox',{checked:Boolean(model.enabled)}),units=input(model.unitTokens??1000,'number',{min:1}),monthly=input(model.monthlyTokens??0,'number',{min:0});
+ const body=dialog(s('模型配置','Model configuration'),{save:s('保存','Save'),onSave:async()=>{const payload={name:name.value,provider:provider.value,kind:kind.value,model:identifier.value,baseUrl:base.value,apiKey:secret.value,enabled:enabled.checked,unitTokens:Number(units.value),monthlyTokens:Number(monthly.value)};await (model.id?put(`/api/ai/models/${model.id}`,payload):post('/api/ai/models',payload));refresh();}});
+ body.append(field(s('名称','Name'),name),field('Provider',provider),field(s('类型','Kind'),kind),field('Model ID',identifier),field('Base URL (HTTPS)',base),field(s('密钥（留空保留已有密钥）','Secret (leave empty to preserve)'),secret),field(s('启用','Enabled'),enabled),field(s('每次媒体生成计费单位（非提供商 token）','Units per media generation (not provider tokens)'),units),field(s('模型月额度','Model monthly budget'),monthly));
+ }
+ if(admin())page.append(button(s('添加模型','Add model'),()=>edit(),'primary'));
+ const list=el('div',{class:'ai-models'});for(const m of models){const usage=(data.usage||[]).filter(u=>u.modelId===m.id);list.append(el('section',{class:'card ai-card'},el('h3',{},m.name),el('p',{},`${m.provider} · ${m.kind} · ${m.model}`),el('p',{},`${s('启用','Enabled')}: ${m.enabled} · ${s('已配置密钥','Secret configured')}: ${Boolean(m.hasSecret)} · ${s('月额度','Monthly budget')}: ${m.monthlyTokens}`),...usage.map(u=>el('p',{},`${u.period} · ${s('已计费 / 预留','Charged / reserved')}: ${u.charged} / ${u.reserved}`)),...(admin()&&(platform()||m.tenantId)?[button(s('编辑','Edit'),()=>edit(m)),button(s('停用','Disable'),run(async()=>{await del(`/api/ai/models/${m.id}`);refresh();}))]:[])));}page.append(list);
+ if(platform()){
+ const tenants=await get('/api/platform/tenants'),tenant=select(tenants.map(x=>[x.id,x.name])),model=select(models.map(x=>[x.id,x.name])),budget=input(0,'number',{min:0});page.append(el('h2',{},s('租户月额度（UTC）','Tenant monthly quotas (UTC)')),field(s('租户','Tenant'),tenant),field(s('模型','Model'),model),field(s('月额度','Monthly budget'),budget),button(s('保存额度','Save quota'),run(async()=>{await put('/api/platform/ai/quotas',{tenantId:tenant.value,modelId:model.value,monthlyTokens:Number(budget.value)});refresh();})),el('pre',{class:'details'},JSON.stringify(data.quotas||[],null,2)));return;
+ }
+ const model=select(models.filter(m=>m.enabled).map(m=>[m.id,`${m.name} · ${m.kind}`])),prompt=el('textarea',{rows:5,maxlength:16000}),lyrics=el('textarea',{rows:3,maxlength:16000}),tokens=input(1024,'number',{min:1,max:32768});let requestId=crypto.randomUUID(),submitted=false;
+ const submit=button(s('提交生成','Generate'),run(async()=>{if(submitted)return;submitted=true;submit.disabled=true;try{await post('/api/ai/jobs',{modelId:model.value,prompt:prompt.value,lyrics:lyrics.value,maxOutputTokens:Number(tokens.value),requestId});requestId=crypto.randomUUID();await jobs();}finally{submitted=false;submit.disabled=!data.enabled||!model.value;}}),'primary',{disabled:!data.enabled||!model.value});
+ // A failed/uncertain request retains its requestId, so a manual retry cannot create a duplicate paid job.
+ page.append(el('h2',{},s('创作工作室','Creation studio')),field(s('模型','Model'),model),field(s('提示词','Prompt'),prompt),field(s('歌词（音乐可选）','Lyrics (optional for music)'),lyrics),field(s('最大输出 token（文本）','Maximum output tokens (text)'),tokens),submit,el('p',{},s('完成的媒体自动进入素材库。媒体计费单位与提供商 token 分别显示。','Completed media automatically enters the library. Media billing units and provider tokens are shown separately.')));
+ const jobList=el('div');page.append(el('h2',{},s('生成任务','Generation jobs')),button(s('刷新任务','Refresh jobs'),run(jobs)),jobList);
+ async function jobs(){const values=await get('/api/ai/jobs');jobList.replaceChildren(...values.map(j=>el('section',{class:'card ai-card'},el('h3',{},`${j.kind} · ${j.status}`),el('p',{},j.prompt),j.resultText?el('pre',{class:'ai-result'},j.resultText):null,j.error?el('p',{class:'error'},j.error):null,el('p',{},`${s('计费单位 / 提供商 token','Charged units / provider tokens')}: ${j.chargedTokens??0} / ${j.providerTokens??'—'}`),j.mediaId?el('a',{href:'/console/#media'},s('已自动导入素材库','Automatically imported into media library')):null,j.status==='queued'?button(s('取消','Cancel'),run(async()=>{await post(`/api/ai/jobs/${j.id}/cancel`);await jobs();})):null)));}
+ await jobs();
+ }catch(e){error(e);}
+}
+export async function renderKeys(page,h){
+ const {el,button,field,input,dialog,get,post,del,locale,refresh}=h,s=(zh,en)=>locale==='en'?en:zh;
+ const error=e=>page.append(el('div',{class:'error',role:'alert'},e.message));
+ page.append(el('h1',{},s('集成 API 密钥','Integration API keys')),el('p',{},s('密钥继承签发人的实时角色和门店范围，仅展示一次。','Keys inherit the issuer’s live role and store limits. Secrets are shown once.')));
+ page.append(button(s('创建密钥','Create key'),()=>{const name=input(),days=input(30,'number',{min:1,max:365}),scopes=['read','control','ai'].map(value=>({value,node:input('','checkbox',{checked:value==='read'})}));const body=dialog(s('创建密钥','Create key'),{save:s('创建','Create'),onSave:async()=>{const result=await post('/api/integrations/keys',{name:name.value,expiresInDays:Number(days.value),scopes:scopes.filter(x=>x.node.checked).map(x=>x.value)});const once=dialog(s('请立即复制，关闭后无法再次查看','Copy now; this key cannot be shown again'));once.append(el('pre',{class:'ai-result'},result.key));refresh();}});body.append(field(s('名称','Name'),name),field(s('有效天数（1–365）','Expiry in days (1–365)'),days),...scopes.map(x=>field(x.value,x.node)));},'primary'));
+ try{const keys=await get('/api/integrations/keys');for(const key of keys)page.append(el('section',{class:'card ai-card'},el('h3',{},key.name),el('p',{},`${key.scopes.join(', ')} · ${key.expiresAt} ${key.revokedAt?s('已撤销','Revoked'):''}`),button(s('撤销','Revoke'),async()=>{try{await del(`/api/integrations/keys/${key.id}`);refresh();}catch(e){error(e);}},'',{disabled:Boolean(key.revokedAt)})));}catch(e){error(e);}
+}
