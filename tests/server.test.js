@@ -339,3 +339,5 @@ test("Android TV clients retain their platform identity in device reports", asyn
     assert.deepEqual(report.diagnostics, {version:"0.1.1", renderFps:29.8, droppedFrames:2, correctionSeeks:0});
   } finally { ws.terminate(); }
 });
+
+test('legacy entry rejects unsupported freeform clients before sending a new layout',async()=>{const current=await(await api('/api/state')).json();const s=current.state.layout.screens[0];const old=new WebSocket(base.replace('http','ws')+'/ws?key='+s.key);await once(old,'open');try{const r=await api('/api/layout',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'freeform',canvasWidth:1920,canvasHeight:1080,screens:[{id:s.id,x:0,y:0,width:1920,height:1080,rotation:0}]})});assert.equal(r.status,409);}finally{old.close();await once(old,'close');}});

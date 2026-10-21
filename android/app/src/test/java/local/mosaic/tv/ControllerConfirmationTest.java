@@ -25,7 +25,7 @@ public class ControllerConfirmationTest {
    activity.onActivityResult(41,Activity.RESULT_OK,result);
    assertEquals("pause",((EditText)field(activity,"transcript")).getText().toString());assertEquals(0,server.getRequestCount());
    Method review=ControllerActivity.class.getDeclaredMethod("review",String.class);review.setAccessible(true);review.invoke(activity,"pause");
-   AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();assertTrue(dialog.isShowing());assertEquals(0,server.getRequestCount());
+   AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();assertTrue(dialog.isShowing());assertTrue(Shadows.shadowOf(dialog).getMessage().toString().contains(activity.getString(R.string.pause)));assertEquals(0,server.getRequestCount());
    dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();assertEquals(0,server.getRequestCount());
    review.invoke(activity,"pause");ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick();
    Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();

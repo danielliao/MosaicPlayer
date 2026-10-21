@@ -1,6 +1,6 @@
 {
   "name": "mosaic-player",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "局域网多设备同步拼接播放器",
@@ -18,8 +18,9 @@
     "test:commercial": "node --test tests/commercial-*.test.js",
     "build:macos-server": "bash scripts/macos/build-installer.sh",
     "test:macos-server": "node tests/macos-server-kit.mjs",
-    "test:unit": "node --test tests/core.test.js tests/diagnostics.test.js tests/program.test.js tests/browser-program.test.js tests/commercial-schedule.test.js",
-    "test:server": "node --test tests/server.test.js"
+    "test:unit": "node --test tests/core.test.js tests/diagnostics.test.js tests/program.test.js tests/browser-program.test.js tests/commercial-schedule.test.js tests/commercial-ai-unit.test.js tests/freeform.test.js tests/console-ai.test.js tests/console-i18n-coverage.test.js tests/intake.test.js tests/proof.test.js tests/designer.test.js tests/transitions.test.js tests/commercial-content-unit.test.js tests/commercial-retail-unit.test.js tests/console-retail.test.js tests/console-planner.test.js tests/console-cms-library.test.js",
+    "test:server": "node --test tests/server.test.js",
+    "test:console": "python3 tests/console-browser-check.py && python3 tests/console-retail-browser-check.py && python3 tests/console-planner-browser-check.py && python3 tests/console-design-browser-check.py"
   },
   "engines": {
     "node": ">=20.11"

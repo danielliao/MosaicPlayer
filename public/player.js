@@ -1,6 +1,7 @@
 import { positionAt, correction, geometry, estimateOffset } from "./sync.js";
 import { SegmentTracker, ProofQueue, proofNamespace } from "./proof.js";
 import { programCursor } from "./program.js";
+import { FrozenTransition } from "./transitions.js";
 import { BrowserProgram } from "./browser-program.js";
 const $ = (s) => document.querySelector(s),
   query = new URLSearchParams(location.search),
@@ -28,7 +29,7 @@ let ws,
   generation = 0,
   revoked = false;
 const programs = new BrowserProgram({key,screenId,send,error: text => label(text)});
-const capabilities = programs.supported ? ["programs", "audio", "freeform"] : ["freeform"];
+const capabilities = programs.supported ? ["programs", "audio", "freeform", "transitions"] : ["freeform", "transitions"];
 const time = () => performance.timeOrigin + performance.now();
 const synced = () => time() + offset;
 function send(msg) {
@@ -130,10 +131,17 @@ async function prepare(pending) {
     send({ type: "failed", id: pending.id });
   }
 }
+let visualTransition, nextRetryAt=0;
 function mount(item) {
-  destroy(current);
-  current = item;
-  $("#media-layer").replaceChildren(item.el);
+  const previous=current;current=item;
+  visualTransition ||= new FrozenTransition({layer:$("#media-layer"),now:synced,doc:document,raf:fn=>requestAnimationFrame(fn)});
+  item.frameReady=item.media.type==='image';
+  if(item.media.type==='video'){
+    const observe=()=>{item.frameReady=false;if(item.el.requestVideoFrameCallback)item.el.requestVideoFrameCallback(()=>{if(current===item)item.frameReady=true;});};
+    item.el.addEventListener?.('seeking',observe);item.el.addEventListener?.('error',()=>{item.failed=true;if(current===item){status='error';latestError='新视频解码失败，保留可用画面';label(latestError);}});observe();
+  }
+  const ready=()=>!item.failed&&(item.media.type==='image'||(item.el.readyState>=2&&!item.el.seeking&&!item.el.paused&&(item.frameReady||!item.el.requestVideoFrameCallback)&&Math.abs(lastDrift||0)<180));
+  visualTransition.begin(previous?.el,item.el,{transition:state.playback.transition,epoch:state.playback.epoch,ready,release:()=>destroy(previous)});
   $("#idle-art").hidden = true;
   latestError = "";
   lastDrift = null;
@@ -198,6 +206,7 @@ function apply() {
     if (!state.playback.mediaId) {
       generation++;
       loadingId = null;
+      visualTransition?.clear();
       destroy(current);
       destroy(prepared);
       current = prepared = null;
@@ -231,7 +240,7 @@ function ping() {
 function quarantine() {
   revoked = true; generation++; clearTimeout(retryTimer);
   loadingId = null; state = null; screen = null; clockReady = false;
-  destroy(current); destroy(prepared); current = prepared = null;
+  visualTransition?.clear();destroy(current); destroy(prepared); current = prepared = null;
   programs.revoke(); status = "error"; latestError = "设备授权已撤销，请重新配对";
   $("#idle-art").hidden = false; label(latestError);
 }
@@ -300,6 +309,16 @@ async function connect() {
   };
 }
 let playAttempt = false;
+function preloadProgramNext(){
+  const manifest=programs.active?.program;
+  if(!manifest||!clockReady||state.pending||state.pendingProgram||loadingId||!current||current.id!==state.playback.mediaId||synced()<nextRetryAt)return;
+  const cursor=programCursor(manifest,synced());if(!cursor||cursor.duration-cursor.position>3)return;
+  const next=programCursor(manifest,cursor.epoch+cursor.duration*1000+1);
+  if(!next||next.mediaId===current.id||prepared?.id===next.mediaId)return;
+  const media=state.media.find(m=>m.id===next.mediaId);if(!media)return;
+  const gen=++generation;loadingId=next.mediaId;
+  load(media).then(item=>{if(gen!==generation||programs.active?.program.id!==manifest.id){destroy(item);return;}destroy(prepared);prepared=item;loadingId=null;}).catch(()=>{if(gen===generation){loadingId=null;nextRetryAt=synced()+5000;}});
+}
 function playbackTick() {
   if (revoked) return;
   const effective = programs.effective(synced());
@@ -326,7 +345,7 @@ function playbackTick() {
   }
   if (current.media.type === "image") {
     status = p.paused ? "paused" : "playing";
-    programs.presentedID = programs.active?.program.id || null;
+    if(!visualTransition?.covering)programs.presentedID = programs.active?.program.id || null;
     lastDrift = null;
     label(
       `${p.paused ? "已暂停" : "图片显示中"} · 时钟往返 ${rtt?.toFixed(1) || "—"} ms`,
@@ -364,7 +383,7 @@ function playbackTick() {
         .finally(() => (playAttempt = false));
     }
     status = latestError ? "blocked" : "playing";
-    if (!el.paused && !el.seeking && !latestError && Math.abs(fix.drift) < 1) programs.presentedID = programs.active?.program.id || null;
+    if (!visualTransition?.covering && !el.paused && !el.seeking && !latestError && Math.abs(fix.drift) < 1) programs.presentedID = programs.active?.program.id || null;
   }
   if (!latestError)
     label(
@@ -379,11 +398,11 @@ function observeProof(){
     const now=synced(),p=state?.playback,program=programs.active?.program,cursor=program?programCursor(program,now):null;
     const durationMs=Math.round((cursor?.duration||current?.media.duration||0)*1000);
     const startAt=cursor?Math.round(cursor.epoch):p&&durationMs?Math.round(p.epoch)+Math.floor((now-p.epoch)/durationMs)*durationMs:0;
-    const ready=!revoked&&clockReady&&document.visibilityState==='visible'&&current?.id===p?.mediaId&&!p?.paused&&status==='playing'&&!latestError&&(current.media.type==='image'||current.el.readyState>=3&&!current.el.paused&&!current.el.seeking&&Math.abs(lastDrift||0)<180);
+    const ready=!visualTransition?.covering&&!revoked&&clockReady&&document.visibilityState==='visible'&&current?.id===p?.mediaId&&!p?.paused&&status==='playing'&&!latestError&&(current.media.type==='image'||current.el.readyState>=3&&!current.el.paused&&!current.el.seeking&&Math.abs(lastDrift||0)<180);
     const event=proofTracker.observe({now,startAt,durationMs,video:current?.media.type==='video',positionMs:(current?.el.currentTime||0)*1000,sourceDurationMs:(current?.el.duration||current?.media.duration||0)*1000,mediaId:current?.id,programId:program?.id||null,control:program?.id||`direct:${p?.revision}`,ready:ready&&(Boolean(cursor)||current?.media.type==='video')});
     if(event)proofQueue.add(event);
 }
-function tick(){observeProof();try{playbackTick();}finally{observeProof();}}
+function tick(){observeProof();try{playbackTick();preloadProgramNext();}finally{observeProof();}}
 setInterval(async()=>{
   if(revoked||proofUploading)return;const events=proofQueue.batch();if(!events.length)return;proofUploading=true;
   try{const r=await fetch('/api/device/play-events',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({events}),redirect:'error',signal:AbortSignal.timeout(12000)});if(r.ok)proofQueue.acknowledge(await r.json());}catch{}finally{proofUploading=false;}
@@ -394,8 +413,8 @@ setInterval(
   () =>
     send({
       type: "report",
-      client: "browser", version: "0.2.0", capabilities, programId: programs.presentedID || null, mediaId: current?.id || null,
-      playbackRevision: current?.id === state?.playback.mediaId && status === "playing" &&
+      client: "browser", version: "0.3.0", capabilities, programId: programs.presentedID || null, mediaId: current?.id || null,
+      playbackRevision: !visualTransition?.covering && current?.id === state?.playback.mediaId && status === "playing" &&
         synced() >= state.playback.epoch &&
         (current?.media.type === "image" || (current?.el.readyState >= 2 && !current.el.paused && !current.el.seeking && !latestError))
         ? state.playback.revision : null,

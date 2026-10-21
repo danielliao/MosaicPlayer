@@ -1,4 +1,5 @@
 <resources>
+    <string name="play_action">Play</string>
     <string name="controller">Controller</string>
     <string name="language">Language / 语言</string>
     <string name="server">Server URL (HTTPS or trusted LAN HTTP)</string>

@@ -9,6 +9,7 @@ public class ControllerTest {
   assertEquals("pause",ControllerCommand.parse("暂停",media).action);
   assertEquals("resume",ControllerCommand.parse("resume",media).action);
   assertEquals("a",ControllerCommand.parse("play Demo",media).mediaId);
+  assertEquals("a",ControllerCommand.parse("播放Demo",media).mediaId);
   assertNull(ControllerCommand.parse("please pause",media));
   assertNull(ControllerCommand.parse("播放 unknown",media));
   media.put("b","Demo"); assertNull(ControllerCommand.parse("play Demo",media));

@@ -8,7 +8,7 @@ public final class ControllerCommand {
   String value=text.trim();
   if(value.equals("暂停")||value.equalsIgnoreCase("pause"))return new ControllerCommand("pause",null);
   if(value.equals("继续")||value.equals("恢复")||value.equalsIgnoreCase("resume"))return new ControllerCommand("resume",null);
-  String name=value.startsWith("播放 ")?value.substring(3).trim():value.regionMatches(true,0,"play ",0,5)?value.substring(5).trim():null;
+  String name=value.startsWith("播放")?value.substring(2).trim():value.regionMatches(true,0,"play ",0,5)?value.substring(5).trim():null;
   if(name==null||name.isEmpty())return null;
   String id=null;
   for(Map.Entry<String,String> entry:media.entrySet())if(name.equals(entry.getValue())){if(id!=null)return null;id=entry.getKey();}

@@ -404,3 +404,6 @@ export function readLocale() { try { return normalizeLocale(localStorage.getItem
 export let locale = readLocale();
 export const t = key => translate(key,locale);
 export function setLocale(value) { locale=normalizeLocale(value); try {localStorage.setItem('mosaic.console.locale',locale);} catch {} document.documentElement.lang=locale==='en'?'en':'zh-CN'; }
+
+// Only selects authored alternatives; interpolated user values remain untouched.
+export function chooseLocale(zh, en, language=locale) { return normalizeLocale(language) === "en" ? en : zh; }

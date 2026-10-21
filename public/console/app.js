@@ -1,5 +1,9 @@
-import { t, locale, setLocale } from "./i18n.js";
+import { t, locale, setLocale, chooseLocale as l } from "./i18n.js";
 import { renderAI, renderKeys } from "./ai-ui.js";
+import { renderRetail } from "./retail-ui.js";
+import { renderPlanner, transitionValue } from "./planner-ui.js";
+import { renderCMSLibrary } from "./cms-library-ui.js";
+import { renderDesigner } from "./designer-ui.js";
 import { createPreview } from "./preview.js";
 const $ = (s, root = document) => root.querySelector(s);
 const app = $("#app");
@@ -107,7 +111,7 @@ function fmtDate(v) {
   const d = new Date(v);
   return Number.isNaN(d.getTime())
     ? String(v)
-    : d.toLocaleString("zh-CN", { hour12: false });
+    : d.toLocaleString(locale === "en" ? "en-US" : "zh-CN", { hour12: false });
 }
 function bytes(v) {
   const n = Number(v) || 0;
@@ -215,7 +219,7 @@ async function api(path, options = {}) {
       state.session = null;
       renderLogin();
     }
-    throw new Error(data.error || `请求失败 (${r.status})`);
+    throw Object.assign(new Error(data.error || l(`请求失败 (${r.status})`, `Request failed (${r.status})`)), {status:r.status});
   }
   return data;
 }
@@ -503,6 +507,8 @@ function renderShell() {
     : navigation.filter((n) => n[0] !== "users" || admin());
   nav.push(["ai", "✦", locale === "en" ? "AI studio & models" : "AI 创作与模型"]);
   if (!platform() && admin()) nav.push(["keys", "⚿", locale === "en" ? "API keys" : "API 密钥"]);
+  if (!platform()) nav.push(["retail", "▧", locale === "en" ? "Retail campaigns" : "门店广告"]);
+  if (!platform()) nav.push(["planner", "▦", locale === "en" ? "Weekly planner" : "每周计划"], ["cmsLibrary", "◈", locale === "en" ? "Merchant media library" : "商户素材库"], ["designer", "▧", locale === "en" ? "Content designer" : "内容设计器"]);
   const sidebar = el(
     "aside",
     { class: "sidebar" },
@@ -592,7 +598,7 @@ function renderShell() {
         el(
           "span",
           {},
-          `支持会话 · ${state.session.tenant?.name || t("客户租户")} · 操作将记录审计`,
+          l(`支持会话 · ${state.session.tenant?.name || t("客户租户")} · 操作将记录审计`, `Support session · ${state.session.tenant?.name || t("客户租户")} · Actions are audited`),
         ),
         button(
           t("返回平台"),
@@ -642,10 +648,10 @@ async function refresh() {
   const page = renderShell();
   page.append(el("div", { class: "muted" }, t("正在读取最新数据…")));
   try {
-    if (["ai", "keys"].includes(state.page)) {
+    if (["ai", "keys", "retail", "planner", "cmsLibrary", "designer"].includes(state.page)) {
       page.replaceChildren();
-      const helpers = {el,button,field,input,select,dialog:(...args)=>dialog(...args).body,get,post,put,del,platform,admin,locale,refresh};
-      await (state.page === "ai" ? renderAI : renderKeys)(page, helpers);
+      const helpers = {el,button,field,input,select,dialog:(...args)=>dialog(...args).body,get,post,put,del,platform,admin,role,locale,refresh,session:state.session,navigate:pageName=>{state.page=pageName;refresh();}};
+      await ({ai:renderAI, keys:renderKeys, retail:renderRetail,planner:renderPlanner,cmsLibrary:renderCMSLibrary,designer:renderDesigner}[state.page])(page, helpers);
       return;
     }
     if (platform()) {
@@ -795,13 +801,13 @@ function renderOverview(page) {
       : empty(t("还没有发布记录"), t("创建模板并发布一个明确版本后，在此查看进展。")),
   );
   const quota = el("section", { class: "card" }, el("h2", {}, t("服务与用量")));
-  const t = state.session.tenant || {},
+  const tenantInfo = state.session.tenant || {},
     usage = o.usage || {},
-    limits = o.limits || t.limits || {};
+    limits = o.limits || tenantInfo.limits || {};
   quota.append(
     meta(
-      `服务期限：${fmtDate(t.expiresAt)}`,
-      `服务状态：${labels[t.status] || t.status || t("以平台配置为准")}`,
+      l(`服务期限：${fmtDate(tenantInfo.expiresAt)}`, `Service expiry: ${fmtDate(tenantInfo.expiresAt)}`),
+      l(`服务状态：${labels[tenantInfo.status] || tenantInfo.status || t("以平台配置为准")}`, `Service status: ${labels[tenantInfo.status] || tenantInfo.status || t("以平台配置为准")}`),
     ),
   );
   for (const [key, label, value] of [
@@ -876,7 +882,7 @@ function renderOverview(page) {
         el(
           "div",
           { class: "help" },
-          `${offline.length} 台设备当前离线。离线设备不会被当作发布成功；恢复连接后请检查实际版本和追赶状态。`,
+          l(`${offline.length} 台设备当前离线。离线设备不会被当作发布成功；恢复连接后请检查实际版本和追赶状态。`, `${offline.length} devices are offline. Offline devices are not counted as deployed; check their actual version and catch-up status after reconnection.`),
         ),
       ),
     );
@@ -925,26 +931,26 @@ function renderTenants(page) {
         .filter((x) =>
           String(x.name).toLowerCase().includes(search.value.toLowerCase()),
         )
-        .map((t) =>
+        .map((tenantRecord) =>
           el(
             "article",
             { class: "card" },
             el(
               "div",
               { class: "card-head" },
-              el("h3", {}, t.name),
-              status(t.status),
+              el("h3", {}, tenantRecord.name),
+              status(tenantRecord.status),
             ),
             meta(
-              `截止 ${fmtDate(t.expiresAt)}`,
-              `门店 ${t.limits?.stores ?? "—t("} · 设备 ${t.limits?.devices ?? ")—t("} · 账号 ${t.limits?.users ?? ")—"}`,
-              `存储额度 ${bytes(t.limits?.storageBytes)}`,
+              l(`截止 ${fmtDate(tenantRecord.expiresAt)}`, `Expires ${fmtDate(tenantRecord.expiresAt)}`),
+              `${locale === "en" ? "Stores" : "门店"} ${tenantRecord.limits?.stores ?? "—"} · ${locale === "en" ? "Devices" : "设备"} ${tenantRecord.limits?.devices ?? "—"} · ${locale === "en" ? "Users" : "账号"} ${tenantRecord.limits?.users ?? "—"}`,
+              l(`存储额度 ${bytes(tenantRecord.limits?.storageBytes)}`, `Storage quota ${bytes(tenantRecord.limits?.storageBytes)}`),
             ),
             el(
               "div",
               { class: "card-footer" },
-              button(t("服务与额度"), () => tenantDialog(t), "small"),
-              button(t("进入支持会话"), () => supportDialog(t), "small"),
+              button(t("服务与额度"), () => tenantDialog(tenantRecord), "small"),
+              button(t("进入支持会话"), () => supportDialog(tenantRecord), "small"),
             ),
           ),
         ),
@@ -1047,7 +1053,7 @@ function supportDialog(tenant) {
     el(
       "div",
       { class: "help" },
-      `即将进入「${tenant.name}」工作区。会话起止、原因和操作均记录平台审计。`,
+      l(`即将进入「${tenant.name}」工作区。会话起止、原因和操作均记录平台审计。`, `You are entering the “${tenant.name}” workspace. Session start/end, reason and actions are recorded in the platform audit log.`),
     ),
     field(t("支持原因"), reason),
   );
@@ -1085,8 +1091,8 @@ function renderStores(page) {
               store.name,
             ),
             meta(
-              `${store.timezone || "Asia/Shanghai"} · ${owned.length} 个播放组 · ${devices.filter((x) => x.storeId === store.id).length} 台设备`,
-              `门店默认版本：${store.templateVersionId ? nameOf("versions", store.templateVersionId) : t("未指定")}`,
+              l(`${store.timezone || "Asia/Shanghai"} · ${owned.length} 个播放组 · ${devices.filter((x) => x.storeId === store.id).length} 台设备`, `${store.timezone || "Asia/Shanghai"} · ${owned.length} groups · ${devices.filter((x) => x.storeId === store.id).length} devices`),
+              l(`门店默认版本：${store.templateVersionId ? nameOf("versions", store.templateVersionId) : t("未指定")}`, `Store default version: ${store.templateVersionId ? nameOf("versions", store.templateVersionId) : t("未指定")}`),
             ),
           ),
           el(
@@ -1128,12 +1134,12 @@ function renderStores(page) {
           ),
           layoutPreview(layout),
           meta(
-            `在线 ${bound.filter((x) => x.online).length} / 已绑定 ${bound.length}`,
+            l(`在线 ${bound.filter((x) => x.online).length} / 已绑定 ${bound.length}`, `Online ${bound.filter((x) => x.online).length} / Bound ${bound.length}`),
             `${group.inheritsStoreTemplate !== false ? t("继承门店默认") : t("播放组单独覆盖")}：${group.templateVersionId ? nameOf("versions", group.templateVersionId) : t("未指定版本")}`,
             group.program?.versionId
-              ? `当前生效版本：${nameOf("versions", group.program.versionId)}`
+              ? l(`当前生效版本：${nameOf("versions", group.program.versionId)}`, `Active version: ${nameOf("versions", group.program.versionId)}`)
               : null,
-            `发声屏幕：${layoutScreens(group).find((x) => x.id === group.audioScreenId)?.name || (group.audioScreenId ? t("已指定") : t("全部静音"))}`,
+            l(`发声屏幕：${layoutScreens(group).find((x) => x.id === group.audioScreenId)?.name || (group.audioScreenId ? t("已指定") : t("全部静音"))}`, `Audio screen: ${layoutScreens(group).find((x) => x.id === group.audioScreenId)?.name || (group.audioScreenId ? t("已指定") : t("全部静音"))}`),
           ),
           el(
             "div",
@@ -1152,7 +1158,6 @@ function renderStores(page) {
             button(locale === "en" ? "Playback preview" : "播放预览", async () => {
               const d=dialog(locale === "en" ? "Playback simulation" : "播放模拟",{wide:true});
               try { const data=await get(`/api/groups/${group.id}/preview`); d.body.append(createPreview(data,{el,locale}));
-                if(storeOperate()&&!data.group.program)for(const action of ["pause","resume"]) d.body.append(button(locale === "en" ? action : action === "pause" ? "暂停" : "继续",async()=>{try{await post(`/api/groups/${group.id}/control`,{action});d.close();refresh();}catch(e){d.body.append(el("p",{class:"error"},e.message));}},"small"));
               }
               catch(e){d.body.append(el("p",{class:"error"},e.message));}
             }, "small"),
@@ -1194,7 +1199,7 @@ function layoutPreview(layout) {
       style: `grid-template-columns:repeat(${cols},minmax(0,1fr))`,
     },
     Array.from({ length: Math.min(16, cols * rows) }, (_, i) =>
-      el("div", { class: "screen-tile" }, screens[i]?.name || `${i + 1} 号屏`),
+      el("div", { class: "screen-tile" }, screens[i]?.name || l(`${i + 1} 号屏`, `Screen ${i + 1}`)),
     ),
   );
 }
@@ -1259,7 +1264,7 @@ function storeDialog(store = {}) {
           () =>
             confirmAction(
               t("删除门店"),
-              `确认删除「${store.name}」？有关联资源时服务端会拒绝删除。`,
+              l(`确认删除「${store.name}」？有关联资源时服务端会拒绝删除。`, `Delete “${store.name}”? The server rejects deletion while resources remain linked.`),
               async () => {
                 await del(`/api/stores/${store.id}`);
                 d.close();
@@ -1288,7 +1293,7 @@ function groupDialog(group = {}) {
         ["", t("全部屏幕静音")],
         ...layoutScreens(group).map((x, i) => [
           x.id,
-          x.name || `${i + 1} 号屏`,
+          x.name || l(`${i + 1} 号屏`, `Screen ${i + 1}`),
         ]),
       ],
       group.audioScreenId || "",
@@ -1330,8 +1335,8 @@ function groupDialog(group = {}) {
   const describeAssignment = () => {
     const owner = state.data.stores.find((s) => s.id === store.value);
     assignmentHint.textContent = assignedVersion.value
-      ? `本组单独指定「${nameOf("versions", assignedVersion.value)}」；门店默认版本变更不会覆盖本组。保存版本变更后，服务端会创建发布任务。`
-      : `本组继承「${owner?.name || t("所属门店")}」的默认版本：${owner?.templateVersionId ? nameOf("versions", owner.templateVersionId) : t("未指定")}。门店默认版本变更时本组将跟随下发；清空默认不会停止当前节目。`;
+      ? l(`本组单独指定「${nameOf("versions", assignedVersion.value)}」；门店默认版本变更不会覆盖本组。保存版本变更后，服务端会创建发布任务。`, `This group uses “${nameOf("versions", assignedVersion.value)}” explicitly. Store default changes do not override it. Saving a version change creates a deployment.`)
+      : l(`本组继承「${owner?.name || t("所属门店")}」的默认版本：${owner?.templateVersionId ? nameOf("versions", owner.templateVersionId) : t("未指定")}。门店默认版本变更时本组将跟随下发；清空默认不会停止当前节目。`, `This group inherits the default version from “${owner?.name || t("所属门店")}”: ${owner?.templateVersionId ? nameOf("versions", owner.templateVersionId) : t("未指定")}. Store default changes trigger deployment to this group; clearing the default does not stop its current program.`);
   };
   store.addEventListener("change", describeAssignment);
   assignedVersion.addEventListener("change", describeAssignment);
@@ -1403,7 +1408,7 @@ function groupDialog(group = {}) {
           () =>
             confirmAction(
               t("删除播放组"),
-              `确认删除「${group.name}」？请先解除有关设备绑定。`,
+              l(`确认删除「${group.name}」？请先解除有关设备绑定。`, `Delete “${group.name}”? Unbind linked devices first.`),
               async () => {
                 await del(`/api/groups/${group.id}`);
                 d.close();
@@ -1451,7 +1456,7 @@ function pairingDialog(storeId, groupId) {
           el(
             "p",
             { class: "meta" },
-            `有效期至 ${fmtDate(data.expiresAt)}。在电视客户端输入此码，选择屏幕位置；成功绑定后配对码失效。`,
+            l(`有效期至 ${fmtDate(data.expiresAt)}。在电视客户端输入此码，选择屏幕位置；成功绑定后配对码失效。`, `Valid until ${fmtDate(data.expiresAt)}. Enter this code on the TV and select a screen position. The code expires after successful binding.`),
           ),
         );
       } catch (e) {
@@ -1622,10 +1627,10 @@ function deviceCard(device) {
     meta(
       `${nameOf("stores", device.storeId)} / ${group?.name || t("未分组")} / ${screen?.name || String(device.screenId || "").slice(0, 8)}`,
       `${r.client || device.client || t("未知客户端")} · ${r.versionName || r.version || t("版本未上报")}`,
-      `最后心跳 ${fmtDate(device.lastSeen)}`,
-      `播放：${r.status || t("未上报")} · 偏差 ${Number.isFinite(r.drift ?? r.driftMs) ? Number(r.drift ?? r.driftMs).toFixed(1) : "—"} ms`,
-      r.mediaId ? `当前素材 ${nameOf("media", r.mediaId)}` : null,
-      r.programId ? `节目 ${String(r.programId).slice(0, 12)}` : null,
+      l(`最后心跳 ${fmtDate(device.lastSeen)}`, `Last heartbeat ${fmtDate(device.lastSeen)}`),
+      l(`播放：${r.status || t("未上报")} · 偏差 ${Number.isFinite(r.drift ?? r.driftMs) ? Number(r.drift ?? r.driftMs).toFixed(1) : "—"} ms`, `Playback: ${r.status || t("未上报")} · Drift ${Number.isFinite(r.drift ?? r.driftMs) ? Number(r.drift ?? r.driftMs).toFixed(1) : "—"} ms`),
+      r.mediaId ? l(`当前素材 ${nameOf("media", r.mediaId)}`, `Current media ${nameOf("media", r.mediaId)}`) : null,
+      r.programId ? l(`节目 ${String(r.programId).slice(0, 12)}`, `Program ${String(r.programId).slice(0, 12)}`) : null,
     ),
   );
   if (r.error) card.append(el("div", { class: "error" }, r.error));
@@ -1659,7 +1664,7 @@ function deviceDialog(device) {
         el(
           "option",
           { value: x.id, selected: x.id === device.screenId },
-          x.name || `${i + 1} 号屏`,
+          x.name || l(`${i + 1} 号屏`, `Screen ${i + 1}`),
         ),
       ),
     );
@@ -1695,7 +1700,7 @@ function deviceDialog(device) {
         () =>
           confirmAction(
             t("解除设备绑定"),
-            `确认解除「${device.name}」的绑定？原设备凭据将被撤销。`,
+            l(`确认解除「${device.name}」的绑定？原设备凭据将被撤销。`, `Unbind “${device.name}”? Its existing device credentials will be revoked.`),
             async () => {
               await del(`/api/devices/${device.id}`);
               d.close();
@@ -1707,7 +1712,7 @@ function deviceDialog(device) {
   );
 }
 async function screenshotDialog(device) {
-  const d = dialog(`${device.name || t("设备")} · 实际画面`, { wide: true }),
+  const d = dialog(l(`${device.name || t("设备")} · 实际画面`, `${device.name || t("设备")} · Actual client screenshot`), { wide: true }),
     content = el("div"),
     request = button(
       t("请求新截屏"),
@@ -1720,7 +1725,7 @@ async function screenshotDialog(device) {
             el(
               "div",
               { class: "help" },
-              `请求状态：${labels[result.status] || result.status || t("等待客户端回报")}。请稍后刷新，未上传前不会显示成功截图。`,
+              l(`请求状态：${labels[result.status] || result.status || t("等待客户端回报")}。请稍后刷新，未上传前不会显示成功截图。`, `Request status: ${labels[result.status] || result.status || t("等待客户端回报")}. Refresh later; a screenshot appears only after upload.`),
             ),
           );
         } catch (e) {
@@ -1749,7 +1754,7 @@ async function screenshotDialog(device) {
             el("img", {
               class: "screenshot",
               src: `/api/screenshots/${encodeURIComponent(id)}/image`,
-              alt: `${device.name} 实际渲染画面`,
+              alt: l(`${device.name} 实际渲染画面`, `${device.name} actual rendered content`),
               loading: "lazy",
               onError: (e) => {
                 e.target.replaceWith(
@@ -1758,8 +1763,8 @@ async function screenshotDialog(device) {
               },
             }),
             meta(
-              `采集时间 ${fmtDate(s.capturedAt || s.createdAt)}`,
-              `来源 ${s.metadata?.method || s.metadata?.client || t("客户端实际渲染内容")} · 此画面并非电视面板实拍`,
+              l(`采集时间 ${fmtDate(s.capturedAt || s.createdAt)}`, `Captured ${fmtDate(s.capturedAt || s.createdAt)}`),
+              l(`来源 ${s.metadata?.method || s.metadata?.client || t("客户端实际渲染内容")} · 此画面并非电视面板实拍`, `Source ${s.metadata?.method || s.metadata?.client || t("客户端实际渲染内容")} · This is not a photograph of the physical TV panel`),
             ),
           ),
         );
@@ -1839,11 +1844,11 @@ function renderMedia(page) {
           meta(
             `${bytes(m.size)}${m.type !== "audio" ? ` · ${m.width || 0} × ${m.height || 0}` : ""}`,
             m.durationMs
-              ? `时长 ${(m.durationMs / 1000).toFixed(1)} 秒`
+              ? l(`时长 ${(m.durationMs / 1000).toFixed(1)} 秒`, `Duration ${(m.durationMs / 1000).toFixed(1)} seconds`)
               : m.duration
-                ? `时长 ${Number(m.duration).toFixed(1)} 秒`
+                ? l(`时长 ${Number(m.duration).toFixed(1)} 秒`, `Duration ${Number(m.duration).toFixed(1)} seconds`)
                 : null,
-            `上传 ${fmtDate(m.createdAt)}`,
+            l(`上传 ${fmtDate(m.createdAt)}`, `Uploaded ${fmtDate(m.createdAt)}`),
             m.archivedAt || m.archived ? t("已归档，保留线上节目引用") : null,
           ),
           el(
@@ -1857,7 +1862,7 @@ function renderMedia(page) {
                     () =>
                       confirmAction(
                         t("删除或归档素材"),
-                        `确认处理「${m.name}」？已被节目版本引用的素材将归档，保留线上播放依赖。`,
+                        l(`确认处理「${m.name}」？已被节目版本引用的素材将归档，保留线上播放依赖。`, `Delete or archive “${m.name}”? Media referenced by published versions is archived to preserve playback dependencies.`),
                         () => del(`/api/media/${m.id}`),
                       ),
                     "small danger",
@@ -1953,8 +1958,8 @@ function renderTemplates(page) {
     ]),
   );
   const list = el("div", { class: "grid" });
-  for (const t of state.data.templates) {
-    const versions = state.data.versions.filter((v) => v.templateId === t.id);
+  for (const templateItem of state.data.templates) {
+    const versions = state.data.versions.filter((v) => v.templateId === templateItem.id);
     list.append(
       el(
         "article",
@@ -1962,25 +1967,25 @@ function renderTemplates(page) {
         el(
           "div",
           { class: "card-head" },
-          el("h3", {}, t.name),
+          el("h3", {}, templateItem.name),
           el("span", { class: "badge blue" }, t("草稿")),
         ),
         meta(
-          t.description || t("暂无模板说明"),
-          `${t.slots?.length ?? t.body?.slots?.length ?? 0} 个时段 · ${versions.length} 个已发布版本`,
-          `更新 ${fmtDate(t.updatedAt || t.createdAt)}`,
+          templateItem.description || t("暂无模板说明"),
+          l(`${templateItem.slots?.length ?? templateItem.body?.slots?.length ?? 0} 个时段 · ${versions.length} 个已发布版本`, `${templateItem.slots?.length ?? templateItem.body?.slots?.length ?? 0} slots · ${versions.length} published versions`),
+          l(`更新 ${fmtDate(templateItem.updatedAt || templateItem.createdAt)}`, `Updated ${fmtDate(templateItem.updatedAt || templateItem.createdAt)}`),
         ),
         el(
           "div",
           { class: "card-footer" },
           button(
             operate() ? t("编辑草稿") : t("查看节目"),
-            () => templateDialog(t),
+            () => templateDialog(templateItem),
             "small",
           ),
-          button(t("版本记录"), () => versionDialog(t), "small"),
+          button(t("版本记录"), () => versionDialog(templateItem), "small"),
           ...(operate()
-            ? [button(t("发布版本"), () => publishTemplate(t), "small primary")]
+            ? [button(t("发布版本"), () => publishTemplate(templateItem), "small primary")]
             : []),
         ),
       ),
@@ -2012,6 +2017,8 @@ function programEditor(initial = {}, title = t("节目内容")) {
       max: 100,
       step: 1,
     });
+  const transition = select([["cut", l("直接切换", "Cut")], ["fade", l("淡化叠加", "Fade overlap")]], initial.transition?.type || "cut"),
+    transitionMs = input(initial.transition?.durationMs || 500, "number", {min:100,max:2000,step:100});
   const rows = { playlist: [], music: [] };
   function addItem(kind, source = {}) {
     const allowed = state.data.media.filter((m) =>
@@ -2094,6 +2101,8 @@ function programEditor(initial = {}, title = t("节目内容")) {
     visual,
     button(t("+ 添加视频 / 图片"), () => addItem("playlist"), "small"),
     row(field(t("声音模式"), audio), field(t("音量 %"), volume)),
+    row(field(l("切换转场", "Transition"), transition), field(l("转场时长 ms", "Transition duration ms"), transitionMs)),
+    el("p", {class:"subtitle"}, l("淡化占用新素材开头，不延长节目周期；旧端回退直接切换。时长 100–2000ms，不超过最短素材的一半。", "Fade overlaps the beginning of new media without extending the cycle. Older clients fall back to cuts. Duration: 100–2000ms, at most half the shortest item.")),
     el("div", { class: "playlist-label" }, t("背景音乐列表")),
     music,
     button(t("+ 添加音乐"), () => addItem("music"), "small"),
@@ -2109,9 +2118,9 @@ function programEditor(initial = {}, title = t("节目内容")) {
     const collect = (kind) =>
       rows[kind].map((x) => {
         if (!x.media.value)
-          throw new Error(`${title}：请选择列表中的每一项素材`);
+          throw new Error(l(`${title}：请选择列表中的每一项素材`, `${title}: Select media for every playlist entry`));
         const m = state.data.media.find((a) => a.id === x.media.value);
-        if (!m) throw new Error(`${title}：有不可用素材，请重新选择`);
+        if (!m) throw new Error(l(`${title}：有不可用素材，请重新选择`, `${title}: Some media is unavailable; choose again`));
         const durationMs =
           m.type === "image"
             ? Math.round(Number(x.seconds.value) * 1000)
@@ -2121,19 +2130,19 @@ function programEditor(initial = {}, title = t("节目内容")) {
           (durationMs < 1000 && m.type === "image") ||
           durationMs <= 0
         )
-          throw new Error(`${title}：图片时长至少 1 秒，音视频必须有有效时长`);
+          throw new Error(l(`${title}：图片时长至少 1 秒，音视频必须有有效时长`, `${title}: Images require at least 1 second; audio and video require a valid duration`));
         return { mediaId: x.media.value, durationMs };
       });
     const playlist = collect("playlist"),
       tracks = collect("music");
     if (!playlist.length)
-      throw new Error(`${title}：至少添加一个视频或图片；纯音乐需要静态背景`);
+      throw new Error(l(`${title}：至少添加一个视频或图片；纯音乐需要静态背景`, `${title}: Add at least one video or image; music-only programs need a static background`));
     if (audio.value === "music" && !tracks.length)
-      throw new Error(`${title}：背景音乐模式至少添加一个音频`);
+      throw new Error(l(`${title}：背景音乐模式至少添加一个音频`, `${title}: Background music mode requires at least one audio track`));
     const v = Number(volume.value);
     if (!Number.isFinite(v) || v < 0 || v > 100)
       throw new Error(t("音量应为 0–100"));
-    return { playlist, music: tracks, audioMode: audio.value, volume: v / 100 };
+    return { playlist, music: tracks, audioMode: audio.value, volume: v / 100, transition:transitionValue(transition.value,transitionMs.value,playlist) };
   };
   return { node: container, value };
 }
@@ -2146,7 +2155,7 @@ function templateDialog(template = {}) {
     slotEditors = [];
   const canEdit = operate();
   function addSlot(initial = {}) {
-    const slotName = input(initial.name || `时段 ${slotEditors.length + 1}`),
+    const slotName = input(initial.name || l(`时段 ${slotEditors.length + 1}`, `Slot ${slotEditors.length + 1}`)),
       today = new Date().toISOString().slice(0, 10),
       startDate = input(initial.startDate || today, "date"),
       endDate = input(
@@ -2280,7 +2289,7 @@ function publishTemplate(template) {
       const version = await post(`/api/templates/${template.id}/publish`);
       await refresh();
       toast(
-        `已生成版本 ${version.name || String(version.id || "").slice(0, 8)}，请前往发布管理选择目标组`,
+        l(`已生成版本 ${version.name || String(version.id || "").slice(0, 8)}，请前往发布管理选择目标组`, `Version ${version.name || String(version.id || "").slice(0, 8)} created. Select target groups in Deployments`),
       );
     },
   });
@@ -2288,12 +2297,12 @@ function publishTemplate(template) {
     el(
       "div",
       { class: "help" },
-      `将「${template.name}」当前草稿冻结为不可变版本。服务端会校验素材时长、时段冲突等；此操作尚未下发到任何设备。`,
+      l(`将「${template.name}」当前草稿冻结为不可变版本。服务端会校验素材时长、时段冲突等；此操作尚未下发到任何设备。`, `Freeze the current draft of “${template.name}” as an immutable version. The server validates media durations and schedule conflicts. This does not deploy to devices.`),
     ),
   );
 }
 async function versionDialog(template) {
-  const d = dialog(`${template.name} · 版本记录`, { wide: true });
+  const d = dialog(l(`${template.name} · 版本记录`, `${template.name} · Version history`), { wide: true });
   try {
     const versions = array(await get(`/api/templates/${template.id}/versions`));
     d.body.append(
@@ -2308,12 +2317,12 @@ async function versionDialog(template) {
                 el(
                   "div",
                   { class: "card-head" },
-                  el("h3", {}, v.name || `版本 ${String(v.id).slice(0, 8)}`),
+                  el("h3", {}, v.name || l(`版本 ${String(v.id).slice(0, 8)}`, `Version ${String(v.id).slice(0, 8)}`)),
                   el("span", { class: "badge green" }, t("不可变")),
                 ),
                 meta(
-                  `发布于 ${fmtDate(v.createdAt)}`,
-                  `版本 ID ${v.id}`,
+                  l(`发布于 ${fmtDate(v.createdAt)}`, `Published ${fmtDate(v.createdAt)}`),
+                  l(`版本 ID ${v.id}`, `Version ID ${v.id}`),
                   v.sha256 ? `SHA-256 ${v.sha256}` : null,
                 ),
                 button(
@@ -2338,7 +2347,7 @@ function showAssignmentResults(results, title) {
   const failed = results.filter((r) => r.status === "failed");
   const accepted = results.length - failed.length;
   toast(
-    `${accepted} 个组已创建发布任务${failed.length ? `，${failed.length} 个组未能提交` : ""}；请检查设备准备与实际生效回执`,
+    l(`${accepted} 个组已创建发布任务${failed.length ? `，${failed.length} 个组未能提交` : ""}；请检查设备准备与实际生效回执`, `Deployments created for ${accepted} groups${failed.length ? `; ${failed.length} groups failed submission` : ""}; check device readiness and actual activation receipts`),
     failed.length > 0,
   );
   setTimeout(() => {
@@ -2347,7 +2356,7 @@ function showAssignmentResults(results, title) {
       el(
         "div",
         { class: failed.length ? "error" : "help" },
-        `共 ${results.length} 个播放组：${accepted} 个已创建任务，${failed.length} 个提交失败。创建任务不代表电视已播放。`,
+        l(`共 ${results.length} 个播放组：${accepted} 个已创建任务，${failed.length} 个提交失败。创建任务不代表电视已播放。`, `${results.length} playback groups: ${accepted} tasks created, ${failed.length} failed submissions. Creating tasks does not prove TV playback.`),
       ),
       el("div", { class: "list" }, results.map(deploymentRow)),
     );
@@ -2376,12 +2385,12 @@ function deploymentRow(d) {
       `${label} · ${d.versionName || (d.versionId ? nameOf("versions", d.versionId) : t("手动单素材播放"))}`,
     ),
     meta(
-      `创建 ${fmtDate(d.createdAt)} · 生效 ${fmtDate(d.activateAt)}`,
+      l(`创建 ${fmtDate(d.createdAt)} · 生效 ${fmtDate(d.activateAt)}`, `Created ${fmtDate(d.createdAt)} · Activates ${fmtDate(d.activateAt)}`),
       errorText,
       typeof progress === "object" &&
         progress !== null &&
         progress.expected !== undefined
-        ? `在线设备准备：${progress.ready ?? 0} / ${progress.expected}`
+        ? l(`在线设备准备：${progress.ready ?? 0} / ${progress.expected}`, `Online devices ready: ${progress.ready ?? 0} / ${progress.expected}`)
         : null,
       progress?.awaitingReports ? t("组时间轴已提交，等待设备实际播放回报") : null,
     ),
@@ -2507,7 +2516,7 @@ function deploymentDialog() {
     checks = [];
   for (const store of state.data.stores) {
     const storeGroups = state.data.groups.filter((g) => g.storeId === store.id);
-    const all = check(`${store.name} · 选择整店`, false);
+    const all = check(l(`${store.name} · 选择整店`, `${store.name} · Select entire store`), false);
     all.node.style.fontWeight = "700";
     targets.append(all.node);
     const items = storeGroups.map((g) => {
@@ -2587,13 +2596,13 @@ function releaseList() {
             el(
               "div",
               { class: "card-head" },
-              el("h3", {}, r.versionName || `版本 ${r.versionCode}`),
+              el("h3", {}, r.versionName || l(`版本 ${r.versionCode}`, `Version ${r.versionCode}`)),
               el("span", { class: "badge blue" }, `build ${r.versionCode}`),
             ),
             meta(
               r.packageName || "local.mosaic.tv",
               `minSDK ${r.minSdk ?? "—"} · ${bytes(r.size)}`,
-              `上传 ${fmtDate(r.createdAt)}`,
+              l(`上传 ${fmtDate(r.createdAt)}`, `Uploaded ${fmtDate(r.createdAt)}`),
               r.releaseNotes || t("暂无发布说明"),
             ),
             el(
@@ -2679,8 +2688,8 @@ function renderUpdates(page) {
                   u.deviceName || nameOf("devices", u.deviceId),
                 ),
                 meta(
-                  `${u.versionName || nameOf("releases", u.releaseId)} · 创建 ${fmtDate(u.createdAt)}`,
-                  `计划 ${fmtDate(u.activateAt)}`,
+                  l(`${u.versionName || nameOf("releases", u.releaseId)} · 创建 ${fmtDate(u.createdAt)}`, `${u.versionName || nameOf("releases", u.releaseId)} · Created ${fmtDate(u.createdAt)}`),
+                  l(`计划 ${fmtDate(u.activateAt)}`, `Scheduled ${fmtDate(u.activateAt)}`),
                   u.error || null,
                 ),
               ),
@@ -2801,9 +2810,9 @@ function renderUsers(page) {
                 { class: "list-main" },
                 el("div", { class: "list-title" }, u.name || u.username),
                 meta(
-                  `账号 ${u.username || "—"} · ${roles[u.role] || u.role}`,
+                  l(`账号 ${u.username || "—"} · ${roles[u.role] || u.role}`, `Account ${u.username || "—"} · ${roles[u.role] || u.role}`),
                   u.storeIds?.length
-                    ? `门店：${u.storeIds.map((x) => nameOf("stores", x)).join("、")}`
+                    ? l(`门店：${u.storeIds.map((x) => nameOf("stores", x)).join("、")}`, `Stores: ${u.storeIds.map((x) => nameOf("stores", x)).join(", ")}`)
                     : t("门店范围：按角色授权"),
                   u.mustChangePassword ? t("下次登录须修改密码") : null,
                 ),
@@ -2899,7 +2908,7 @@ function renderAudit(page) {
         el("div", { class: "list-title" }, a.action || a.event || t("审计事件")),
         meta(
           `${a.actorName || a.userName || a.actorId || a.userId || t("系统")} · ${fmtDate(a.createdAt || a.at || a.timestamp)}`,
-          `目标 ${a.targetName || a.targetId || a.target || "—"}`,
+          l(`目标 ${a.targetName || a.targetId || a.target || "—"}`, `Target ${a.targetName || a.targetId || a.target || "—"}`),
         ),
       ),
       el("span", { class: "badge" }, a.result || t("已记录")),

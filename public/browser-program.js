@@ -115,7 +115,7 @@ export class BrowserProgram {
     const cursor=programCursor(this.active.program,now);
     if(!cursor)return null;
     if(this.presentedID===this.active.program.id)this.updateAudio(now);
-    return {...this.active,pending:null,pendingProgram:null,playback:{mediaId:cursor.mediaId,epoch:cursor.epoch,paused:false,position:0,revision:Math.round(cursor.epoch)}};
+    return {...this.active,pending:null,pendingProgram:null,playback:{mediaId:cursor.mediaId,epoch:cursor.epoch,paused:false,position:0,revision:Math.round(cursor.epoch),transition:cursor.transition}};
   }
   updateAudio(now) {
     const content=programContent(this.active.program,now).content;

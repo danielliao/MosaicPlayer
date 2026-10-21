@@ -1,4 +1,5 @@
 <resources>
+    <string name="play_action">播放</string>
     <string name="controller">控制器 / Controller</string>
     <string name="language">语言 / Language</string>
     <string name="server">服务器地址（HTTPS 或可信局域网 HTTP）</string>
