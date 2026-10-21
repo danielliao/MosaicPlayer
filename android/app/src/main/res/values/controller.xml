@@ -1,0 +1,29 @@
+<resources>
+    <string name="controller">控制器 / Controller</string>
+    <string name="language">语言 / Language</string>
+    <string name="server">服务器地址（HTTPS 或可信局域网 HTTP）</string>
+    <string name="api_key">管理员创建的 API 密钥（read、control）</string>
+    <string name="load_groups">保存并加载播放组</string>
+    <string name="transcript">输入指令：暂停、继续、播放 媒体名称</string>
+    <string name="speak">语音输入</string>
+    <string name="review">预览指令</string>
+    <string name="pause">暂停</string>
+    <string name="resume">继续</string>
+    <string name="back">返回</string>
+    <string name="loading">处理中…</string>
+    <string name="ready">已加载。可用媒体：</string>
+    <string name="failed">操作失败，请检查网络、密钥范围及服务器。</string>
+    <string name="speech_unavailable">系统语音不可用，请输入文字。</string>
+    <string name="invalid_command">请选择播放组并输入有效指令；媒体名必须精确且唯一。</string>
+    <string name="confirm">确认目标和指令</string>
+    <string name="send">确认发送</string>
+    <string name="sent">服务器已接受指令</string>
+    <string name="setup_title">Mosaic TV 多屏同步播放器</string>
+    <string name="setup_help">连接同一局域网，选择电视位置。方向键移动，确认键选择。</string>
+    <string name="connect_server">连接此服务器</string>
+    <string name="search_server">自动搜索局域网</string>
+    <string name="pair_code">后台生成的一次性配对码</string>
+    <string name="verify_pair">验证配对码并选择屏幕</string>
+    <string name="screens">可用屏幕</string>
+    <string name="exit">退出应用</string>
+</resources>

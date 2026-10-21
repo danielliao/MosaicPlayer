@@ -39,6 +39,8 @@ public final class MainActivity extends Activity {
   private String selectedBase, catalogSignature;
   private final Set<String> found = new HashSet<>();
 
+  @Override protected void attachBaseContext(android.content.Context base) { super.attachBaseContext(AppLocale.wrap(base)); }
+
   @Override
   public void onCreate(Bundle state) {
     super.onCreate(state);
@@ -121,22 +123,23 @@ public final class MainActivity extends Activity {
     content = new LinearLayout(this);
     content.setOrientation(LinearLayout.VERTICAL);
     setup.addView(content, new ScrollView.LayoutParams(-1, -2));
-    content.addView(text("Mosaic TV   多屏同步播放器", 28, Color.WHITE));
-    content.addView(text("连接同一局域网，选择这台电视在画面中的位置。方向键移动 · 确认键选择", 16, 0xffaeb9d0));
+    content.addView(button(getString(R.string.controller), () -> startActivity(new android.content.Intent(this, ControllerActivity.class))));
+    content.addView(text(getString(R.string.setup_title), 28, Color.WHITE));
+    content.addView(text(getString(R.string.setup_help), 16, 0xffaeb9d0));
     address = new EditText(this);
     address.setText(store.server());
     address.setSingleLine(true);
     address.setSelectAllOnFocus(true);
     address.setTextColor(Color.WHITE);
     address.setTextSize(18);
-    address.setHint("服务器 IP 或 http://地址:3210");
+    address.setHint(getString(R.string.server));
     address.setHintTextColor(0xffaeb9d0);
     address.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
     address.setMinHeight(dp(54));
     content.addView(address, new LinearLayout.LayoutParams(-1, -2));
     LinearLayout actions = new LinearLayout(this);
-    connect = button("连接此服务器", () -> connectAddress(address.getText().toString(), false));
-    search = button("自动搜索局域网", this::searchServers);
+    connect = button(getString(R.string.connect_server), () -> connectAddress(address.getText().toString(), false));
+    search = button(getString(R.string.search_server), this::searchServers);
     LinearLayout.LayoutParams left = new LinearLayout.LayoutParams(0, -2, 1);
     left.setMargins(0, dp(6), dp(8), dp(6));
     actions.addView(connect, left);
@@ -149,24 +152,24 @@ public final class MainActivity extends Activity {
     pairingCode.setSingleLine(true);
     pairingCode.setTextColor(Color.WHITE);
     pairingCode.setTextSize(20);
-    pairingCode.setHint("后台生成的一次性配对码");
+    pairingCode.setHint(getString(R.string.pair_code));
     pairingCode.setHintTextColor(0xffaeb9d0);
     pairingCode.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
     pairingCode.setMinHeight(dp(54));
     pairingCode.setVisibility(View.GONE);
     content.addView(pairingCode);
-    resolveCode = button("验证配对码并选择屏幕", this::resolvePairing);
+    resolveCode = button(getString(R.string.verify_pair), this::resolvePairing);
     resolveCode.setVisibility(View.GONE);
     content.addView(resolveCode);
     servers = new LinearLayout(this);
     servers.setOrientation(LinearLayout.VERTICAL);
     content.addView(servers);
-    heading = text("可用屏幕", 22, Color.WHITE);
+    heading = text(getString(R.string.screens), 22, Color.WHITE);
     content.addView(heading);
     screens = new LinearLayout(this);
     screens.setOrientation(LinearLayout.VERTICAL);
     content.addView(screens);
-    content.addView(button("退出应用", this::finish));
+    content.addView(button(getString(R.string.exit), this::finish));
     connect.requestFocus();
   }
 
@@ -198,7 +201,7 @@ public final class MainActivity extends Activity {
                 diagnosticsToggle.setText(engine.toggleCorrections() ? "诊断：暂停自动校时" : "诊断：恢复自动校时");
             });
     controls.addView(diagnosticsToggle);
-    controls.addView(button("退出应用", this::finish));
+    controls.addView(button(getString(R.string.exit), this::finish));
     controls.setVisibility(View.GONE);
   }
 
