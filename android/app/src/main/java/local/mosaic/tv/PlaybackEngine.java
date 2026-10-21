@@ -382,6 +382,9 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
       item.player.addListener(
           new Player.Listener() {
             @Override
+            public void onRenderedFirstFrame(){if(current==item)wall.firstFrame(item.player);}
+
+            @Override
             public void onIsPlayingChanged(boolean playing) { if(!playing && current==item)proofTracker.reset(); }
 
             @Override
@@ -432,7 +435,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
     status = "error";
     if (prepared != null && prepared.media == media) releasePrepared();
     if (current != null && current.media == media) {
-      wall.clear();
+      wall.clearKeepingSnapshot();
       current.release();
       current = null;
       events.contentVisible(false);
@@ -456,6 +459,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
             long tickAt = SystemClock.elapsedRealtime();
             if (lastTickAt != 0) maxTickGap = Math.max(maxTickGap, tickAt - lastTickAt);
             lastTickAt = tickAt;
+            wall.transitionTick(transport.now());
             observeProof();
             JSONObject scheduled = programs.render((long) transport.now());
             if (scheduled != null && scheduled != state) {
@@ -594,6 +598,9 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
     }
     boolean due = paused || now >= p.optDouble("epoch");
     if (prepared != null && prepared.ready && id.equals(prepared.media.optString("id")) && due) {
+      ProgramTimeline.Selection incoming=programs.selection((long)now);
+      JSONObject transition=incoming==null?null:incoming.program.optJSONObject("transition");
+      if(!wall.beginTransition(transition==null?"cut":transition.optString("type","cut"),transition==null?0:transition.optLong("durationMs"),p.optDouble("epoch"))){status="waiting";return;}
       Loaded old = current;
       current = prepared;
       prepared = null;
@@ -622,7 +629,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
         Protocol.screen(state, screenId),
         current.media.optDouble("width", 1920),
         current.media.optDouble("height", 1080));
-    if (due
+    if (due && wall.contentReady()
         && (current.player == null || current.player.getPlaybackState() == Player.STATE_READY)) {
       displayedProgramId = programs.programId();
       displayedProgramVersionId = programs.programVersionId();
@@ -694,7 +701,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
     long duration=selection!=null?selection.visual.durationMs:current==null?0:Math.round(current.media.optDouble("duration",0)*1000);
     double epoch=p==null?0:p.optDouble("epoch");
     long start=selection!=null?(long)now-selection.visual.positionMs:duration>0?Math.round(epoch)+((long)Math.floor((now-epoch)/duration))*duration:0;
-    boolean ready=current!=null&&p!=null&&current.media.optString("id").equals(p.optString("mediaId"))&&!p.optBoolean("paused")&&"playing".equals(status)&&now>=epoch&&(transport.clock.ready()||programs.programId()!=null)&&(current.bitmap!=null||current.player!=null&&current.player.isPlaying()&&current.player.getPlaybackState()==Player.STATE_READY&&Math.abs(lastDrift)<.18);
+    boolean ready=current!=null&&p!=null&&current.media.optString("id").equals(p.optString("mediaId"))&&!p.optBoolean("paused")&&"playing".equals(status)&&!wall.transitionVisible()&&now>=epoch&&(transport.clock.ready()||programs.programId()!=null)&&(current.bitmap!=null||current.player!=null&&current.player.isPlaying()&&current.player.getPlaybackState()==Player.STATE_READY&&Math.abs(lastDrift)<.18);
     if(current!=null){
       PlaybackEvidence.Sample sample=new PlaybackEvidence.Sample(current.media.optString("id"),programs.programId(),programs.programId()!=null?programs.programId():"direct:"+(p==null?-1:p.optLong("revision")),start,duration,now,ready&&(selection!=null||"video".equals(current.media.optString("type"))));
       sample.video=current.player!=null;sample.positionMs=current.player==null?0:current.player.getCurrentPosition();sample.sourceDurationMs=current.media.optDouble("duration",0)*1000;

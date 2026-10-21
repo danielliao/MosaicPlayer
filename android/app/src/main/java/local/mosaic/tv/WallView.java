@@ -11,6 +11,12 @@ final class WallView extends FrameLayout {
   private final FrameLayout viewport;
   private final TextureView video;
   private final ImageView image;
+  private final ImageView freeze;
+  private Bitmap frozen;
+  private boolean videoFrameReady;
+  private String transitionType="cut";
+  private long transitionDuration;
+  private double transitionEpoch;
   private String geometryKey;
   private JSONObject layout, screen;
   private double sourceW = 1920, sourceH = 1080;
@@ -31,6 +37,8 @@ final class WallView extends FrameLayout {
     image.setScaleType(ImageView.ScaleType.MATRIX);
     viewport.addView(image, new LayoutParams(-1, -1));
     image.setVisibility(GONE);
+    freeze=new ImageView(c);freeze.setScaleType(ImageView.ScaleType.FIT_XY);freeze.setVisibility(GONE);
+    addView(freeze,new LayoutParams(-1,-1));
   }
 
   void configure(JSONObject layout, JSONObject screen, double width, double height) {
@@ -47,6 +55,7 @@ final class WallView extends FrameLayout {
   void showVideo(ExoPlayer p) {
     if (player != null && player != p) player.clearVideoTextureView(video);
     player = p;
+    videoFrameReady=false;
     image.setVisibility(GONE);
     image.setImageDrawable(null);
     bitmap = null;
@@ -65,7 +74,28 @@ final class WallView extends FrameLayout {
     applyCrop();
   }
 
-  void clear() {
+  boolean beginTransition(String type,long duration,double epoch) {
+    if(frozen==null && (bitmap!=null || player!=null && videoFrameReady)){
+      try{frozen=capture(2048);}catch(java.io.IOException|RuntimeException|OutOfMemoryError e){return false;}
+    }
+    transitionType=type;transitionDuration=duration;transitionEpoch=epoch;
+    if(frozen!=null){freeze.setImageBitmap(frozen);freeze.setAlpha(1);freeze.setVisibility(VISIBLE);}
+    return true;
+  }
+  void firstFrame(ExoPlayer p){if(player==p)videoFrameReady=true;}
+  boolean transitionVisible(){return frozen!=null;}
+  boolean contentReady(){return !transitionVisible() && (bitmap!=null || player!=null && videoFrameReady);}
+  void transitionTick(double now){
+    if(frozen==null)return;
+    float alpha=TransitionMath.opacity(transitionType,transitionDuration,transitionEpoch,now,bitmap!=null||videoFrameReady);
+    freeze.setAlpha(alpha);
+    if(alpha<=0)clearFreeze();
+  }
+  private void clearFreeze(){freeze.setVisibility(GONE);freeze.setImageDrawable(null);if(frozen!=null){frozen.recycle();frozen=null;}}
+  void clearKeepingSnapshot(){clearContent();if(frozen!=null)freeze.setAlpha(1);}
+  void clear(){clearFreeze();clearContent();}
+  private void clearContent() {
+    videoFrameReady=false;
     if (player != null) player.clearVideoTextureView(video);
     player = null;
     bitmap = null;
@@ -75,13 +105,15 @@ final class WallView extends FrameLayout {
   }
 
   /** Captures only this app's actual cropped content; TextureView pixels are not in View.draw. */
-  Bitmap capture() throws java.io.IOException {
+  Bitmap capture() throws java.io.IOException { return capture(960); }
+  private Bitmap capture(int maxEdge) throws java.io.IOException {
+    if(frozen!=null && freeze.getAlpha()>=.999f){float resize=Math.min(1f,(float)maxEdge/Math.max(frozen.getWidth(),frozen.getHeight()));Bitmap scaled=Bitmap.createScaledBitmap(frozen,Math.max(1,Math.round(frozen.getWidth()*resize)),Math.max(1,Math.round(frozen.getHeight()*resize)),true);return scaled==frozen?scaled.copy(Bitmap.Config.ARGB_8888,false):scaled;}
     if (getWidth() <= 0
         || getHeight() <= 0
         || viewport.getWidth() <= 1
         || viewport.getHeight() <= 1
         || bitmap == null && player == null) throw new java.io.IOException("当前没有可采集画面");
-    float scale = Math.min(1f, 960f / Math.max(getWidth(), getHeight()));
+    float scale = Math.min(1f, (float)maxEdge / Math.max(getWidth(), getHeight()));
     Bitmap result =
         Bitmap.createBitmap(
             Math.max(1, Math.round(getWidth() * scale)),
@@ -112,6 +144,7 @@ final class WallView extends FrameLayout {
       frame.recycle();
     }
     canvas.restore();
+    if(frozen!=null){Paint paint=new Paint();paint.setAlpha(Math.round(freeze.getAlpha()*255));canvas.drawBitmap(frozen,null,new Rect(0,0,getWidth(),getHeight()),paint);}
     return result;
   }
 

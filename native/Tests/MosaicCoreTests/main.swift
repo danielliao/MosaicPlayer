@@ -12,6 +12,12 @@ func expectNil<T>(_ value: T?) { if value != nil { fail("expected nil") } }
 func expectThrows<T>(_ body: @autoclosure () throws -> T) { do { _ = try body(); fail("expected error") } catch {} }
 
 final class CoreChecks {
+    func testTransitions() {
+        expectEqual(TransitionMath.opacity(type:"fade",durationMs:1000,epoch:5000,now:5500,ready:false),1,accuracy:0.001)
+        expectEqual(TransitionMath.opacity(type:"fade",durationMs:1000,epoch:5000,now:5500,ready:true),0.5,accuracy:0.001)
+        expectEqual(TransitionMath.opacity(type:"fade",durationMs:1000,epoch:5000,now:6200,ready:true),0,accuracy:0.001)
+        expectEqual(TransitionMath.opacity(type:"cut",durationMs:0,epoch:5000,now:5000,ready:true),0,accuracy:0.001)
+    }
     func testPlaybackEvidence() {
         var tracker=EvidenceTracker(),events=[PlaybackEvidence]()
         for n in stride(from:0,through:3000,by:100) {
@@ -156,6 +162,7 @@ final class CoreChecks {
 
 let suite = CoreChecks()
 let checks: [(String, () throws -> Void)] = [
+    ("shared-epoch fade waits for frame readiness without restarting late transitions", suite.testTransitions),
     ("observed completions exclude partial joins stalls pauses and control changes", suite.testPlaybackEvidence),
     ("heterogeneous geometry and overlap validation", suite.testFreeform),
     ("manual server normalization and unsafe URL rejection", suite.testServerAddressNormalization),

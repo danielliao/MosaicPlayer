@@ -26,6 +26,8 @@ import MosaicCore
     private var screenshotInFlight = false
     var onChange: (() -> Void)?
     var onMedia: ((LoadedMedia?) -> Void)?
+    var onTransition: ((LoadedMedia,ProgramTransition?,Double)->Bool)?
+    var onTransitionTick: ((Double)->Void)?
     var onLayout: ((WallLayout, WallScreen) -> Void)?
     var onPairingValidated: ((PlayerConnection) -> Void)?
     var displaySize: (() -> CGSize)?
@@ -202,9 +204,12 @@ import MosaicCore
                 status = "waiting"; detail = "已就绪，等待统一开始时间…"
                 return
             }
-            current?.releasePlayback(); current = prepared; self.prepared = nil
+            let transition=state.program?.content(at:transport.serverNow).0.transition
+            if let onTransition, !onTransition(prepared,transition,playback.epoch) {status="waiting";return}
+            let old=current; current = prepared; self.prepared = nil
+            if onTransition == nil { onMedia?(prepared) }
+            old?.releasePlayback()
             seeking = false; activeRevision = prepared.scheduledRevision
-            onMedia?(prepared)
         } else if current?.media.id != mediaID, let media = state.media.first(where: { $0.id == mediaID }) {
             load(media, tag: "current:\(mediaID)", preparationID: nil)
         }
@@ -215,12 +220,13 @@ import MosaicCore
         let duration=Int64(((cursor?.duration ?? current?.media.duration ?? 0)*1000).rounded())
         let epoch=p?.epoch ?? 0
         let start=cursor?.epoch ?? (duration>0 ? epoch+floor((now-epoch)/Double(duration))*Double(duration) : 0)
-        let ready=current?.media.id==p?.mediaId && p?.paused==false && status=="playing" && !seeking && now>=epoch && (transport.clockReady || !connected && programs.manifestID != nil) && (current?.image != nil || (current?.player?.timeControlStatus == .playing && (renderInfo?()["videoReady"] as? Bool)==true && abs(drift ?? 0)<180))
+        let ready=current?.media.id==p?.mediaId && p?.paused==false && status=="playing" && (renderInfo?()["transitionVisible"] as? Bool) != true && !seeking && now>=epoch && (transport.clockReady || !connected && programs.manifestID != nil) && (current?.image != nil || (current?.player?.timeControlStatus == .playing && (renderInfo?()["videoReady"] as? Bool)==true && abs(drift ?? 0)<180))
         var sample=EvidenceSample(mediaId:current?.media.id ?? "",programId:programs.manifestID,control:programs.manifestID ?? "direct:\(p?.revision ?? -1)",startAt:Int64(start.rounded()),durationMs:duration,now:now,ready:ready && (cursor != nil || current?.media.type=="video"))
         sample.video=current?.media.type=="video";sample.positionMs=(current?.player?.currentTime().seconds ?? 0)*1000;sample.sourceDurationMs=(current?.media.duration ?? 0)*1000
         proof.observe(sample,connection:transport.connection)
     }
     private func tick() {
+        onTransitionTick?(transport.serverNow)
         observeProof()
         defer { observeProof() }
         if let id = transport.connection?.screenID, let effective = programs.tick(now: transport.serverNow, screenID: id) { self.state = effective }
@@ -313,7 +319,7 @@ import MosaicCore
     }
     private func report() {
         let size = displaySize?() ?? .zero
-        let rendered = current?.media.id == state?.playback.mediaId && status == "playing" && !seeking &&
+        let rendered = current?.media.id == state?.playback.mediaId && status == "playing" && (renderInfo?()["transitionVisible"] as? Bool) != true && !seeking &&
             transport.serverNow >= (state?.playback.epoch ?? .infinity) &&
             (current?.image != nil || ((renderInfo?()["videoReady"] as? Bool) == true && current?.player?.timeControlStatus == .playing))
         if rendered {

@@ -5,6 +5,10 @@ import MosaicCore
 
 @MainActor final class CanvasView: NSView {
     override var isFlipped: Bool { true }
+    let freeze = CALayer()
+    private var transition: ProgramTransition?
+    private var transitionEpoch=0.0
+    var transitionVisible:Bool { !freeze.isHidden && freeze.contents != nil }
     let viewport = CALayer()
     let wall = CALayer()
     let video = AVPlayerLayer()
@@ -16,48 +20,70 @@ import MosaicCore
     var onInteraction: (() -> Void)?
     private var tracking: NSTrackingArea?
     private var output: AVPlayerItemVideoOutput?
+    private var latestVideoBuffer: CVPixelBuffer?
     private weak var outputItem: AVPlayerItem?
 
+    private func prepareFrameOutput() {
+        guard !video.isHidden, let item=video.player?.currentItem,outputItem !== item else{return}
+        if let old=output,let oldItem=outputItem{oldItem.remove(old)}
+        let next=AVPlayerItemVideoOutput(pixelBufferAttributes:[kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA])
+        item.add(next);output=next;outputItem=item
+    }
+    private func snapshot(maxEdge:Int,includeFreeze:Bool) throws -> CGImage {
+        guard let (layout,screen)=layoutInfo,bounds.width>0,bounds.height>0 else{throw PlayerError.invalidMedia}
+        let ratio=min(1,Double(maxEdge)/max(bounds.width,bounds.height)),width=max(1,Int(bounds.width*ratio)),height=max(1,Int(bounds.height*ratio))
+        guard let ctx=CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.noneSkipLast.rawValue) else{throw PlayerError.invalidMedia}
+        let frozen:CGImage? = includeFreeze && transitionVisible ? (freeze.contents as! CGImage?):nil
+        let alpha=Double(freeze.opacity)
+        ctx.setFillColor(CGColor(gray:0,alpha:1));ctx.fill(CGRect(x:0,y:0,width:width,height:height))
+        if frozen == nil || alpha<1 {
+            let frame:CGImage
+            if !video.isHidden,let item=video.player?.currentItem,let buffer=output?.copyPixelBuffer(forItemTime:item.currentTime(),itemTimeForDisplay:nil) ?? latestVideoBuffer,let image=CIContext().createCGImage(CIImage(cvPixelBuffer:buffer),from:CIImage(cvPixelBuffer:buffer).extent){frame=image}
+            else if !imageLayer.isHidden,let image=(imageLayer.contents as! CGImage?){frame=image}
+            else{throw PlayerError.invalidMedia}
+            let geometry=CanvasGeometry(layout:layout,screen:screen,width:Double(width),height:Double(height))
+            let viewport=geometry.viewport,wall=geometry.wall.offsetBy(dx:viewport.minX,dy:viewport.minY)
+            let rotation=layout.mode=="freeform" ? screen.rotation ?? 0:0
+            ctx.saveGState();ctx.translateBy(x:Double(width)/2,y:Double(height)/2);ctx.rotate(by:-Double(rotation) * .pi / 180);ctx.translateBy(x:-Double(width)/2,y:-Double(height)/2)
+            let scale=max(wall.width/Double(frame.width),wall.height/Double(frame.height))
+            ctx.clip(to:CGRect(x:viewport.minX,y:Double(height)-viewport.maxY,width:viewport.width,height:viewport.height))
+            ctx.draw(frame,in:CGRect(x:wall.midX-Double(frame.width)*scale/2,y:Double(height)-wall.midY-Double(frame.height)*scale/2,width:Double(frame.width)*scale,height:Double(frame.height)*scale));ctx.restoreGState()
+        }
+        if let frozen {ctx.setAlpha(alpha);ctx.draw(frozen,in:CGRect(x:0,y:0,width:width,height:height))}
+        guard let result=ctx.makeImage() else{throw PlayerError.invalidMedia};return result
+    }
+    func beginTransition(_ media:LoadedMedia,transition:ProgramTransition?,epoch:Double)->Bool {
+        if !transitionVisible && (imageLayer.contents != nil || !video.isHidden && video.isReadyForDisplay) {
+            prepareFrameOutput()
+            guard let frame=try? snapshot(maxEdge:2048,includeFreeze:true) else{return false}
+            CATransaction.begin();CATransaction.setDisableActions(true);freeze.contents=frame;freeze.isHidden=false;freeze.opacity=1;CATransaction.commit()
+        }
+        self.transition=transition;transitionEpoch=epoch
+        display(media,preserveFreeze:true);return true
+    }
+    func transitionTick(_ now:Double) {
+        prepareFrameOutput()
+        if let item=video.player?.currentItem,let buffer=output?.copyPixelBuffer(forItemTime:item.currentTime(),itemTimeForDisplay:nil){latestVideoBuffer=buffer}
+        guard transitionVisible else{return}
+        if !video.isHidden, video.player?.currentItem?.status == .failed {
+            CATransaction.begin();CATransaction.setDisableActions(true);freeze.opacity=1;CATransaction.commit();return
+        }
+        let ready = !imageLayer.isHidden && imageLayer.contents != nil || !video.isHidden && video.isReadyForDisplay && video.player?.currentItem?.status == .readyToPlay
+        let alpha=TransitionMath.opacity(type:transition?.type ?? "cut",durationMs:transition?.durationMs ?? 0,epoch:transitionEpoch,now:now,ready:ready)
+        CATransaction.begin();CATransaction.setDisableActions(true);freeze.opacity=Float(alpha)
+        if alpha<=0{freeze.contents=nil;freeze.isHidden=true}
+        CATransaction.commit()
+    }
     func screenshot() async throws -> Data {
-        guard let (layout, screen) = layoutInfo, bounds.width > 0, bounds.height > 0 else { throw PlayerError.invalidMedia }
-        var frame: CGImage?
-        if !video.isHidden, let item = video.player?.currentItem {
-            if outputItem !== item {
-                if let old = output, let oldItem = outputItem { oldItem.remove(old) }
-                let next = AVPlayerItemVideoOutput(pixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
-                item.add(next); output = next; outputItem = item
-                try await Task.sleep(nanoseconds: 150_000_000)
-            }
-            guard let output, let buffer = output.copyPixelBuffer(forItemTime: item.currentTime(), itemTimeForDisplay: nil) else { throw PlayerError.invalidMedia }
-            let image = CIImage(cvPixelBuffer: buffer)
-            frame = CIContext().createCGImage(image, from: image.extent)
-        } else if !imageLayer.isHidden { frame = imageLayer.contents as! CGImage? }
-        guard let frame else { throw PlayerError.invalidMedia }
-        let size = bounds.size
-        return try await Task.detached(priority: .utility) {
-            let ratio = min(1, 960 / max(size.width, size.height))
-            let width = max(1, Int(size.width * ratio)), height = max(1, Int(size.height * ratio))
-            guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw PlayerError.invalidMedia }
-            ctx.setFillColor(CGColor(gray: 0, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            let geometry = CanvasGeometry(layout: layout, screen: screen, width: Double(width), height: Double(height))
-            let viewport = geometry.viewport, wall = geometry.wall.offsetBy(dx: viewport.minX, dy: viewport.minY)
-            let rotation = layout.mode == "freeform" ? screen.rotation ?? 0 : 0
-            ctx.translateBy(x: Double(width)/2, y: Double(height)/2)
-            ctx.rotate(by: -Double(rotation) * .pi / 180)
-            ctx.translateBy(x: -Double(width)/2, y: -Double(height)/2)
-            let scale = max(wall.width / Double(frame.width), wall.height / Double(frame.height))
-            let rect = CGRect(x: wall.midX - Double(frame.width) * scale / 2,
-                              y: Double(height) - wall.midY - Double(frame.height) * scale / 2,
-                              width: Double(frame.width) * scale, height: Double(frame.height) * scale)
-            ctx.clip(to: CGRect(x: viewport.minX, y: Double(height) - viewport.maxY, width: viewport.width, height: viewport.height))
-            ctx.draw(frame, in: rect)
-            guard let result = ctx.makeImage() else { throw PlayerError.invalidMedia }
-            for quality in [0.7, 0.45, 0.25] {
-                let buffer = NSMutableData()
-                guard let destination = CGImageDestinationCreateWithData(buffer, "public.jpeg" as CFString, 1, nil) else { throw PlayerError.invalidMedia }
-                CGImageDestinationAddImage(destination, result, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
-                if CGImageDestinationFinalize(destination), buffer.length <= 256 * 1024 { return buffer as Data }
+        prepareFrameOutput()
+        if !video.isHidden && !transitionVisible {try await Task.sleep(nanoseconds:50_000_000)}
+        let frame=try snapshot(maxEdge:960,includeFreeze:true)
+        return try await Task.detached(priority:.utility){
+            for quality in [0.7,0.45,0.25]{
+                let buffer=NSMutableData()
+                guard let destination=CGImageDestinationCreateWithData(buffer,"public.jpeg" as CFString,1,nil) else{throw PlayerError.invalidMedia}
+                CGImageDestinationAddImage(destination,frame,[kCGImageDestinationLossyCompressionQuality:quality] as CFDictionary)
+                if CGImageDestinationFinalize(destination),buffer.length<=256*1024{return buffer as Data}
             }
             throw PlayerError.invalidMedia
         }.value
@@ -70,6 +96,7 @@ import MosaicCore
         viewport.masksToBounds = true; viewport.isGeometryFlipped = true
         wall.masksToBounds = true; wall.isGeometryFlipped = true
         layer?.addSublayer(viewport); viewport.addSublayer(wall)
+        freeze.contentsGravity = .resize;freeze.isHidden=true;layer?.addSublayer(freeze)
         calibration.colors = [NSColor(red: 0.15, green: 0.20, blue: 0.39, alpha: 1).cgColor,
                               NSColor(red: 0.48, green: 0.43, blue: 0.72, alpha: 1).cgColor,
                               NSColor(red: 0.88, green: 0.65, blue: 0.74, alpha: 1).cgColor]
@@ -96,8 +123,10 @@ import MosaicCore
     override func mouseMoved(with event: NSEvent) { onInteraction?() }
     override func mouseDown(with event: NSEvent) { onInteraction?() }
     func configure(_ layout: WallLayout, screen: WallScreen) { layoutInfo = (layout, screen); needsLayout = true }
-    func display(_ media: LoadedMedia?) {
+    func display(_ media: LoadedMedia?,preserveFreeze:Bool=false) {
+        if !preserveFreeze {freeze.contents=nil;freeze.isHidden=true}
         CATransaction.begin(); CATransaction.setDisableActions(true)
+        latestVideoBuffer=nil
         video.player = media?.player; video.isHidden = media?.player == nil
         imageLayer.contents = media?.image; imageLayer.isHidden = media?.image == nil
         calibration.isHidden = media != nil
@@ -111,6 +140,7 @@ import MosaicCore
             viewportFrame = geometry.viewport; wallFrame = geometry.wall
         } else { viewportFrame = bounds; wallFrame = bounds }
         CATransaction.begin(); CATransaction.setDisableActions(true)
+        freeze.frame=bounds
         viewport.transform = CATransform3DIdentity
         viewport.frame = viewportFrame; wall.frame = wallFrame
         let rotation = layoutInfo?.0.mode == "freeform" ? layoutInfo?.1.rotation ?? 0 : 0
@@ -155,6 +185,8 @@ import MosaicCore
         window.delegate = self; window.contentView = canvas
         buildPanel()
         engine.onMedia = { [weak self] media in self?.canvas.display(media) }
+        engine.onTransition = { [weak self] media,transition,epoch in self?.canvas.beginTransition(media,transition:transition,epoch:epoch) ?? false }
+        engine.onTransitionTick = { [weak self] now in self?.canvas.transitionTick(now) }
         engine.captureFrame = { [weak self] in
             guard let self else { throw PlayerError.invalidMedia }
             return try await self.canvas.screenshot()
@@ -163,7 +195,7 @@ import MosaicCore
         engine.displaySize = { [weak self] in guard let self else { return .zero }; return self.canvas.convertToBacking(self.canvas.bounds).size }
         engine.renderInfo = { [weak self] in
             guard let self else { return [:] }
-            return ["videoReady": self.canvas.video.isReadyForDisplay,
+            return ["transitionVisible":self.canvas.transitionVisible,"videoReady": self.canvas.video.isReadyForDisplay,
                     "imageReady": self.canvas.imageLayer.contents != nil,
                     "fullscreen": self.window?.styleMask.contains(.fullScreen) == true,
                     "wallX": self.canvas.wall.frame.origin.x,
