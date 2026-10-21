@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Mosaic · 设备播放器</title>
+    <link rel="stylesheet" href="/player.css" />
+  </head>
+  <body>
+    <div id="viewport">
+      <div id="wall">
+        <div id="idle-art">
+          <div class="idle-orbit"></div>
+          <div class="idle-text">
+            MOSAIC<span>ONE CANVAS. EVERY SCREEN.</span>
+          </div>
+          <div class="ruler"></div>
+        </div>
+        <div id="media-layer"></div>
+      </div>
+    </div>
+    <div id="player-info">
+      <div class="info-brand">◫ Mosaic</div>
+      <h1 id="screen-name">正在连接屏幕</h1>
+      <p id="player-status">正在连接同步服务…</p>
+      <div class="player-actions">
+        <button id="fullscreen">进入全屏</button
+        ><button id="hide-info">隐藏面板</button>
+      </div>
+      <small>移动鼠标可显示控制面板 · 按 Esc 退出全屏</small>
+    </div>
+    <div id="connection-warning" hidden>
+      连接中断 · 保持本地播放，重连后自动校时
+    </div>
+    <script type="module" src="/player.js"></script>
+  </body>
+</html>

@@ -1,0 +1,45 @@
+name: mosaic-production
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile.commercial
+    image: mosaic-commercial:0.2.0
+    restart: unless-stopped
+    environment:
+      COMMERCIAL_DATABASE_URL: ${COMMERCIAL_DATABASE_URL:?Set non-owner runtime database URL}
+      COMMERCIAL_DATA_DIR: /data
+      COMMERCIAL_DOWNLOAD_DIR: /downloads
+      COMMERCIAL_COOKIE_SECURE: 'true'
+      COMMERCIAL_TRUST_PROXY: '1'
+      COMMERCIAL_APK_SIGNER_SHA256: ${COMMERCIAL_APK_SIGNER_SHA256:?Set trusted existing signing certificate digest}
+      COMMERCIAL_AAPT_PATH: /usr/bin/aapt
+      COMMERCIAL_APKSIGNER_PATH: /usr/bin/apksigner
+    volumes:
+      - ${MOSAIC_DATA_PATH:?Set absolute persistent data path}:/data
+      - ${MOSAIC_DOWNLOAD_PATH:?Set absolute client installer directory}:/downloads:ro
+    expose:
+      - '3210'
+    stop_grace_period: 30s
+    networks: [mosaic]
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      MOSAIC_DOMAIN: ${MOSAIC_DOMAIN:?Set DNS hostname}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [mosaic]
+networks:
+  mosaic:
+volumes:
+  caddy-data:
+  caddy-config:

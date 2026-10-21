@@ -1,0 +1,8 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,copyFile,writeFile,readFile} from 'node:fs/promises';
+import {tmpdir,homedir} from 'node:os';
+import path from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {inspectApk} from '../commercial/releases.js';
+test('APK rejects damaged bytes and a valid APK re-signed with an unrelated key',async()=>{const dir=await mkdtemp(path.join(tmpdir(),'mosaic-apk-'));try{const source=path.resolve('android/dist/MosaicPlayer-AndroidTV.apk');const valid=await inspectApk(source);assert.equal(valid.packageName,'local.mosaic.tv');await writeFile(path.join(dir,'invalid.apk'),Buffer.from('not an APK'));await assert.rejects(inspectApk(path.join(dir,'invalid.apk')));const java=process.env.JAVA_HOME||'/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home';const keystore=path.join(dir,'other.p12');execFileSync(path.join(java,'bin/keytool'),['-genkeypair','-keystore',keystore,'-storetype','PKCS12','-alias','other','-keyalg','RSA','-keysize','2048','-validity','1','-storepass','fixture-password','-keypass','fixture-password','-dname','CN=Test Only'],{stdio:'ignore'});const other=path.join(dir,'other.apk');await copyFile(source,other);execFileSync(path.join(process.env.ANDROID_HOME||path.join(homedir(),'Library/Android/sdk'),'build-tools/35.0.0/apksigner'),['sign','--ks',keystore,'--ks-pass','pass:fixture-password','--key-pass','pass:fixture-password',other],{stdio:'ignore',env:{...process.env,JAVA_HOME:java}});await assert.rejects(inspectApk(other),/签名与现有播放器不一致/);}finally{await rm(dir,{recursive:true,force:true});}});

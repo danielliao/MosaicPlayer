@@ -1,0 +1,14 @@
+node_modules
+.data
+output
+.env
+.env.*
+*.env
+.git
+.github
+.sealos
+.local-notes
+.playwright-cli
+.DS_Store
+android
+native

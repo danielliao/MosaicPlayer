@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>Mosaic · 浏览器选屏</title>
+<style>
+body{font:16px system-ui;background:#14233f;color:#fff;margin:0;min-height:100vh;display:grid;place-items:center}main{width:min(90vw,480px);padding:32px;box-sizing:border-box}h1{font-size:28px}p{color:#bbc8dc;line-height:1.7}label{display:block;margin:16px 0}input,select,button{font:inherit;box-sizing:border-box;width:100%;padding:13px;margin-top:8px;border-radius:8px;border:1px solid #7c91b6}button{background:#3568ee;color:white;cursor:pointer}button:disabled{opacity:.5}.hint{font-size:13px}#status{min-height:24px}
+</style>
+<main><h1>为这块屏幕选择位置</h1><p>输入门店管理员在后台生成的一次性配对码，选择播放组和屏幕编号。</p>
+<form id="resolve"><label>门店配对码<input id="code" required maxlength="80" autocomplete="off"></label><button>验证配对码</button></form>
+<form id="join" hidden><label>屏幕位置<select id="screen"></select></label><button id="join-button">使用此屏幕开始播放</button></form>
+<p id="status" role="status"></p><p class="hint">浏览器后台节流可能影响同步。节目缓存与音乐需要 HTTPS 或 localhost，电视和 Mac 推荐使用原生客户端。</p></main>
+<script type="module" src="/enroll.js"></script>
+</html>

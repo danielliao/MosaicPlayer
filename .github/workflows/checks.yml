@@ -1,0 +1,25 @@
+name: Checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: npm ci
+      - run: npm run test:unit
+      - run: npm run test:server
+  swift:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift run --package-path native MosaicCoreChecks

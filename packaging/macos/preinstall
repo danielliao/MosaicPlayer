@@ -1,0 +1,24 @@
+#!/bin/bash
+set -euo pipefail
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+BASE="/Library/Application Support/MosaicServer"
+CURRENT="/Library/MosaicServer/current"
+if [[ "${3:-/}" != "/" ]]; then echo "只能安装到当前启动磁盘。"; exit 1; fi
+if [[ "$(uname -m)" != arm64 ]]; then echo "此安装包适用于 Apple Silicon Mac。"; exit 1; fi
+if (( $(sw_vers -productVersion | cut -d. -f1) < 14 )); then echo "需要 macOS 14 或以上。"; exit 1; fi
+if [[ -e "$CURRENT" && ! -L "$CURRENT" ]]; then echo "安装路径被其他文件占用。"; exit 1; fi
+if [[ -e /usr/local/bin/mosaic-server || -L /usr/local/bin/mosaic-server ]]; then
+  if [[ ! -L /usr/local/bin/mosaic-server || "$(readlink /usr/local/bin/mosaic-server)" != "$CURRENT/bin/mosaic-server" ]]; then
+    echo "/usr/local/bin/mosaic-server 已被其他程序占用，未修改该文件。"; exit 1
+  fi
+fi
+if [[ -L "$CURRENT" && -f "$CURRENT/app/scripts/macos/admin.mjs" && -f "$BASE/config/server.json" ]]; then
+  PREVIOUS="$(readlink "$CURRENT")"
+  printf '%s\n' "$PREVIOUS" > "$BASE/previous-release"
+  chmod 600 "$BASE/previous-release"
+  if ! "$CURRENT/runtime/node/bin/node" "$CURRENT/app/scripts/macos/admin.mjs" upgrade-backup; then
+    "$CURRENT/runtime/node/bin/node" "$CURRENT/app/scripts/macos/admin.mjs" start || true
+    echo "升级前备份失败，已停止安装。"
+    exit 1
+  fi
+fi

@@ -1,0 +1,21 @@
+name: mosaic-commercial
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mosaic-commercial-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mosaic_owner
+      POSTGRES_PASSWORD: ${COMMERCIAL_OWNER_PASSWORD:?Run scripts/commercial-setup.mjs}
+      POSTGRES_DB: mosaic_commercial
+    ports:
+      - '127.0.0.1:${COMMERCIAL_PG_PORT:-55432}:5432'
+    volumes:
+      - mosaic-commercial-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mosaic_owner -d mosaic_commercial']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  mosaic-commercial-db:

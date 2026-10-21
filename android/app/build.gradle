@@ -1,0 +1,59 @@
+plugins { id "com.android.application" }
+
+android {
+    namespace "local.mosaic.tv"
+    compileSdk 35
+    defaultConfig {
+        applicationId "local.mosaic.tv"
+        minSdk 23
+        targetSdk 35
+        versionCode 3
+        versionName "0.2.0"
+        def server = System.getenv("MOSAIC_SERVER_URL") ?: ""
+        buildConfigField "String", "DEFAULT_SERVER", groovy.json.JsonOutput.toJson(server)
+        buildConfigField "boolean", "ALLOW_LAN_HTTP_UPDATES", (System.getenv("MOSAIC_ALLOW_LAN_HTTP_UPDATES") == "true").toString()
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        release {
+            def credentials = rootProject.file(".signing/password")
+            if (credentials.exists()) {
+                storeFile rootProject.file(".signing/mosaic-tv.jks")
+                storePassword credentials.text.trim()
+                keyAlias "mosaic-tv"
+                keyPassword credentials.text.trim()
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig signingConfigs.release; minifyEnabled false }
+    }
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            systemProperty "mosaic.projectRoot", rootProject.projectDir.parentFile.absolutePath
+            systemProperty "robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2"
+        }
+    }
+    lint { abortOnError true }
+}
+dependencies {
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.5"
+    implementation "androidx.core:core:1.15.0"
+    implementation "androidx.media3:media3-exoplayer:1.8.0"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.robolectric:robolectric:4.14.1"
+    testImplementation "org.json:json:20240303"
+    testImplementation "com.squareup.okhttp3:mockwebserver:4.12.0"
+}
+
+// Parse a real generated manifest without requiring an archived release binary.
+tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+    dependsOn("assembleDebug")
+}

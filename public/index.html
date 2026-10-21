@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Mosaic · 同步拼接播放器</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body data-view="overview">
+    <aside class="sidebar">
+      <a class="brand" href="/"
+        ><span class="brand-symbol"><i></i><i></i><i></i><i></i></span
+        >Mosaic<span class="brand-dot">®</span></a
+      >
+      <div class="workspace">
+        <span class="workspace-icon">M</span>
+        <div>我的播放空间<small>LOCAL WORKSPACE</small></div>
+        <span class="local-dot"></span>
+      </div>
+      <div class="nav-label">工作空间</div>
+      <nav>
+        <button class="nav-item active" data-view="overview">
+          <span>◫</span>播放总览</button
+        ><button class="nav-item" data-view="media">
+          <span>▧</span>素材库 <b id="nav-count">0</b></button
+        ><button class="nav-item" data-view="devices">
+          <span>▱</span>设备管理</button
+        ><button class="nav-item" data-view="layout">
+          <span>⊞</span>屏幕布局
+        </button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="connection">
+          <span id="connection-dot" class="dot"></span>
+          <div id="connection-label">
+            连接服务中<small>局域网同步服务</small>
+          </div>
+        </div>
+        <button id="help-button" class="help-button">
+          ⓘ <span>连接与使用指南</span> ↗
+        </button>
+        <div class="version">MOSAIC PLAYER <span>v0.1</span></div>
+      </div>
+    </aside>
+    <div class="app">
+      <header class="topbar">
+        <span
+          >工作空间 <span class="slash">/</span>
+          <strong id="breadcrumb">播放总览</strong></span
+        >
+        <div class="topbar-right">
+          <span class="badge"><span class="dot green"></span>本地存储</span
+          ><span class="avatar">M</span>
+        </div>
+      </header>
+      <main>
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">ONE CANVAS. EVERY SCREEN.</div>
+            <h1 id="page-title">让每块屏幕，成为同一幅画面。</h1>
+            <p id="page-description">
+              上传内容、连接设备，让精彩在屏幕之间自然延伸。
+            </p>
+          </div>
+          <div class="heading-actions">
+            <a
+              class="button secondary"
+              href="/downloads/mosaic-player.zip"
+              download
+              >↓ Mac 播放端</a
+            ><a class="button secondary" href="/downloads/mosaic-player.apk" download>↓ Android TV APK</a><button class="button primary" id="top-upload">
+              <span>＋</span> 上传素材
+            </button>
+          </div>
+        </div>
+        <div id="offline-banner" class="banner" hidden>
+          同步服务已断开，正在重新连接。播放设备会继续本地播放。
+        </div>
+        <section class="stats overview-only">
+          <div class="stat">
+            <span class="stat-label">在线设备 <i>◉</i></span>
+            <div>
+              <strong id="online-count">0</strong
+              ><span id="total-devices">/ 3 台</span>
+            </div>
+            <small id="device-summary">等待设备连接</small>
+          </div>
+          <div class="stat">
+            <span class="stat-label">拼接画布 <i>⊞</i></span>
+            <div>
+              <strong id="wall-dimensions">5760 × 1080</strong><span>px</span>
+            </div>
+            <small id="layout-summary">3 列 × 1 行 · 横向拼接</small>
+          </div>
+          <div class="stat">
+            <span class="stat-label">同步偏差 <i>≈</i></span>
+            <div><strong id="drift-value">—</strong><span>ms</span></div>
+            <small id="drift-summary">等待播放器上报</small>
+          </div>
+          <div class="stat">
+            <span class="stat-label">素材库 <i>▧</i></span>
+            <div><strong id="media-count">0</strong><span>个素材</span></div>
+            <small id="media-summary">图片和视频，一个空间管理</small>
+          </div>
+        </section>
+        <div class="main-grid">
+          <section class="panel preview-panel overview-only layout-only">
+            <div class="panel-heading">
+              <h2>拼接预览 <span class="tag">实时布局</span></h2>
+              <button class="text-button" id="edit-layout">编辑布局 ↗</button>
+            </div>
+            <div class="preview-stage">
+              <div id="wall-preview" class="wall-preview">
+                <div class="calibration-art">
+                  <div class="orbit orbit-one"></div>
+                  <div class="orbit orbit-two"></div>
+                  <div class="art-label">
+                    MOSAIC<span>Bring your screens together.</span>
+                  </div>
+                  <div class="art-coordinate">CANVAS / 01</div>
+                </div>
+                <div id="preview-media"></div>
+                <div id="preview-grid" class="preview-grid"></div>
+              </div>
+              <div class="preview-caption">
+                <span class="tiny-cross">＋</span>
+                <span id="preview-caption">屏幕之间的每一刻，保持同步</span
+                ><span class="tiny-cross">＋</span>
+              </div>
+            </div>
+            <div class="playback-bar">
+              <div class="playback-icon">▶</div>
+              <div class="now-playing">
+                <strong id="playing-title">还没有播放内容</strong
+                ><small id="playing-detail"
+                  >上传素材，开始你的第一幅拼接画面</small
+                >
+              </div>
+              <span id="playback-badge" class="status-badge">待机中</span
+              ><button
+                class="icon-button"
+                id="pause-button"
+                aria-label="暂停播放"
+                disabled
+              >
+                Ⅱ</button
+              ><button
+                class="icon-button"
+                id="restart-button"
+                aria-label="重新播放"
+                disabled
+              >
+                ↻
+              </button>
+              <button
+                class="icon-button"
+                id="stop-button"
+                aria-label="停止播放"
+                disabled
+              >
+                ■
+              </button>
+            </div>
+          </section>
+          <section class="panel quick-panel overview-only">
+            <div class="panel-heading">
+              <h2>开始播放</h2>
+              <span class="tag">3 STEPS</span>
+            </div>
+            <div class="steps">
+              <div class="step">
+                <span>01</span>
+                <div>
+                  <strong>上传你的内容</strong>
+                  <p>图片或视频，保留每一处细节。</p>
+                </div>
+                <i id="step-one">↗</i>
+              </div>
+              <div class="step">
+                <span>02</span>
+                <div>
+                  <strong>连接每一块屏幕</strong>
+                  <p>安装原生播放器，连接对应屏幕。</p>
+                </div>
+                <i id="step-two">↗</i>
+              </div>
+              <div class="step">
+                <span>03</span>
+                <div>
+                  <strong>一键同步播放</strong>
+                  <p>选中素材，所有在线屏幕同时呈现。</p>
+                </div>
+                <i id="step-three">↗</i>
+              </div>
+            </div>
+            <button class="button secondary wide" id="connect-devices">
+              连接设备 <span>↗</span>
+            </button>
+            <p class="quiet-note">
+              <span class="dot green"></span> 自动校时 · 断线重连 · 本地素材
+            </p>
+          </section>
+        </div>
+        <section class="panel layout-panel layout-only">
+          <div class="panel-heading">
+            <h2>画布设置</h2>
+            <span class="muted">修改后即时应用于所有设备</span>
+          </div>
+          <form id="layout-form" class="layout-form">
+            <label
+              >列数<input
+                name="cols"
+                type="number"
+                min="1"
+                max="8"
+                required /></label
+            ><label
+              >行数<input
+                name="rows"
+                type="number"
+                min="1"
+                max="8"
+                required /></label
+            ><label
+              >单屏逻辑宽度（px）<input
+                name="tileWidth"
+                type="number"
+                min="320"
+                max="7680"
+                required /></label
+            ><label
+              >单屏逻辑高度（px）<input
+                name="tileHeight"
+                type="number"
+                min="240"
+                max="4320"
+                required /></label
+            ><label
+              >水平边框补偿（px）<input
+                name="gapX"
+                type="number"
+                min="0"
+                max="500"
+                required /></label
+            ><label
+              >垂直边框补偿（px）<input
+                name="gapY"
+                type="number"
+                min="0"
+                max="500"
+                required
+            /></label>
+            <div class="layout-explanation">
+              最多 16
+              屏。素材按比例居中填满整幅画布；边框补偿会隐藏接缝处的内容。建议使用相同物理尺寸的显示器，不同比例的设备保留黑边。
+            </div>
+            <button class="button primary" type="submit">保存布局</button>
+          </form>
+        </section>
+        <section class="panel media-panel overview-only media-only">
+          <div class="panel-heading">
+            <h2>素材库 <span id="library-count" class="count-tag">0</span></h2>
+            <div class="filters">
+              <button class="filter active" data-filter="all">全部</button
+              ><button class="filter" data-filter="video">视频</button
+              ><button class="filter" data-filter="image">图片</button>
+            </div>
+          </div>
+          <div class="media-content">
+            <div id="media-list" class="media-list"></div>
+            <button class="drop-zone" id="drop-zone">
+              <span class="upload-symbol">↥</span
+              ><strong id="upload-label">拖放文件到这里，或点击上传</strong
+              ><span>MP4（H.264）· JPG · PNG · WebP</span
+              ><small>单个文件最大 1 GB · 原文件本地存储</small
+              ><progress
+                id="upload-progress"
+                max="100"
+                value="0"
+                hidden
+              ></progress>
+            </button>
+          </div>
+        </section>
+        <section class="panel devices-panel overview-only devices-only">
+          <div class="panel-heading">
+            <h2>
+              已分配屏幕 <span id="screen-count" class="count-tag">3</span>
+            </h2>
+            <div class="device-toolbar">
+              <span class="muted">连接地址</span
+              ><select id="network-address" aria-label="设备连接地址"></select
+              ><button class="text-button" id="device-layout">
+                调整布局 ↗
+              </button>
+            </div>
+          </div>
+          <div class="publication-bar">
+            <div><strong id="publication-status">尚未发布屏幕</strong><p id="publication-help">发布后，局域网原生客户端可直接选择屏幕编号，无需复制链接。</p></div>
+            <button id="publication-toggle" class="button secondary">发布屏幕供客户端选择</button>
+          </div>
+          <div id="network-warning" class="network-warning" hidden>
+            当前是本机地址。其他设备请使用同一局域网的 IP
+            地址，并允许防火墙访问端口。
+          </div>
+          <div class="device-table-wrap">
+            <table class="device-table">
+              <thead>
+                <tr>
+                  <th>设备 / 屏幕</th>
+                  <th>画布位置</th>
+                  <th>连接状态</th>
+                  <th>同步偏差</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="device-rows"></tbody>
+            </table>
+          </div>
+        </section>
+        <footer>
+          <span
+            ><span class="dot green"></span>
+            每一块屏幕，共享同一条时间线。</span
+          ><span>Mosaic / 多设备同步播放</span>
+        </footer>
+      </main>
+    </div>
+    <input
+      id="file-input"
+      type="file"
+      accept=".mp4,.jpg,.jpeg,.png,.webp"
+      hidden
+    />
+    <div id="toast" class="toast" role="status" hidden></div>
+    <dialog id="login-dialog">
+      <form id="login-form">
+        <div class="eyebrow">MOSAIC / ADMIN</div>
+        <h2>连接你的播放空间</h2>
+        <p>
+          输入服务端的管理密钥。可在运行后台的电脑上读取
+          <code>.data/admin-token</code>。
+        </p>
+        <label
+          >管理密钥<input
+            id="admin-key"
+            type="password"
+            required
+            autocomplete="current-password"
+        /></label>
+        <p id="login-error" class="error"></p>
+        <button class="button primary wide">连接后台</button>
+      </form>
+    </dialog>
+    <dialog id="help-dialog">
+      <div class="dialog-heading">
+        <h2>让屏幕连接起来</h2>
+        <button id="close-help" class="icon-button" aria-label="关闭指南">
+          ×
+        </button>
+      </div>
+      <ol class="guide">
+        <li>让后台电脑和播放设备连接到同一个局域网。</li>
+        <li>在「屏幕布局」中设置行列、单屏比例和边框补偿。</li>
+        <li>在「设备管理」选择局域网地址，为每台设备复制不同的播放链接。</li>
+        <li>
+          在 Mac 上下载并打开 Mosaic
+          Player，点击设备的「原生打开」或粘贴播放链接，然后进入全屏。原生端会缓存素材，并在播放时保持屏幕唤醒。
+        </li>
+        <li>
+          上传素材并点击「播放」。在线设备完成准备后统一开始，后加入的设备自动追上进度。
+        </li>
+      </ol>
+      <div class="callout">
+        浏览器通过软件校时，不能保证硬件逐帧锁定。建议有线网络、同型号显示器和相同浏览器。播放链接包含设备密钥，请只分享给对应设备。
+      </div>
+    </dialog>
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>

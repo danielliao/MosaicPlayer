@@ -1,0 +1,4 @@
+#!/bin/bash
+set -euo pipefail
+ROOT="/Library/MosaicServer/current"
+exec "$ROOT/runtime/node/bin/node" "$ROOT/app/scripts/macos/admin.mjs" "$@"

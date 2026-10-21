@@ -1,0 +1,39 @@
+{
+  "name": "mosaic-player",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "局域网多设备同步拼接播放器",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test tests/*.test.js",
+    "build:native": "bash native/scripts/build.sh",
+    "test:native": "swift run --package-path native MosaicCoreChecks",
+    "build:android": "bash android/scripts/build.sh",
+    "test:android": "bash android/scripts/test.sh",
+    "start:commercial": "node scripts/commercial-run.mjs",
+    "setup:commercial": "node scripts/commercial-setup.mjs",
+    "import:commercial": "node scripts/commercial-import.mjs",
+    "test:commercial": "node --test tests/commercial-*.test.js",
+    "build:macos-server": "bash scripts/macos/build-installer.sh",
+    "test:macos-server": "node tests/macos-server-kit.mjs",
+    "test:unit": "node --test tests/core.test.js tests/diagnostics.test.js tests/program.test.js tests/browser-program.test.js tests/commercial-schedule.test.js",
+    "test:server": "node --test tests/server.test.js"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "^0.5.1",
+    "express": "^5.3.0",
+    "multer": "^2.4.0",
+    "pg": "^8.23.1",
+    "ws": "^8.22.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danielliao/MosaicPlayer.git"
+  }
+}

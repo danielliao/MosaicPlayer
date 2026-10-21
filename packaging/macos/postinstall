@@ -1,0 +1,68 @@
+#!/bin/bash
+set -Eeuo pipefail
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+BASE="/Library/Application Support/MosaicServer"
+ROOT="/Library/MosaicServer"
+VERSION="0.2.0-macos.1"
+RELEASE="$ROOT/versions/$VERSION"
+NODE="$RELEASE/runtime/node/bin/node"
+ADMIN="$RELEASE/app/scripts/macos/admin.mjs"
+mkdir -p "$BASE"
+chmod 755 "$BASE"
+create_user() {
+  local name="$1" uid
+  if dscl . -read "/Users/$name" >/dev/null 2>&1; then
+    if ! dscl . -read "/Users/$name" UserShell | grep -q '/usr/bin/false' ||
+       ! dscl . -read "/Users/$name" RealName | grep -q 'Mosaic service'; then
+      echo "同名账号 $name 不属于此服务，请联系管理员。"; return 1
+    fi
+    dscl . -read "/Groups/$name" >/dev/null
+    return
+  fi
+  for uid in $(seq 400 499); do
+    if ! dscl . -list /Users UniqueID | awk '{print $NF}' | grep -qx "$uid" &&
+       ! dscl . -list /Groups PrimaryGroupID | awk '{print $NF}' | grep -qx "$uid"; then break; fi
+  done
+  if [[ "$uid" == 499 ]]; then echo "无法分配服务账号。"; return 1; fi
+  dscl . -create "/Groups/$name"
+  dscl . -create "/Groups/$name" PrimaryGroupID "$uid"
+  dscl . -create "/Users/$name"
+  dscl . -create "/Users/$name" UniqueID "$uid"
+  dscl . -create "/Users/$name" PrimaryGroupID "$uid"
+  dscl . -create "/Users/$name" RealName "Mosaic service"
+  dscl . -create "/Users/$name" UserShell /usr/bin/false
+  dscl . -create "/Users/$name" NFSHomeDirectory /var/empty
+  dscl . -create "/Users/$name" IsHidden 1
+  dscl . -create "/Users/$name" Password '*'
+}
+rollback() {
+  trap - ERR
+  echo "安装初始化失败，正在保留诊断记录。"
+  "$NODE" "$ADMIN" stop || true
+  if [[ -f "$BASE/previous-release" && -f "$BASE/upgrade-backup" ]]; then
+    local previous backup
+    previous="$(cat "$BASE/previous-release")"
+    backup="$(cat "$BASE/upgrade-backup")"
+    if [[ "$previous" == "$ROOT/versions/"* && -x "$previous/runtime/node/bin/node" ]]; then
+      ln -sfn "$previous" "$ROOT/current"
+      "$previous/runtime/node/bin/node" "$previous/app/scripts/macos/admin.mjs" configure
+      "$previous/runtime/node/bin/node" "$previous/app/scripts/macos/admin.mjs" restore "$backup" --confirm-restore
+      echo "已使用升级前快照恢复旧服务。"
+    fi
+  fi
+  exit 1
+}
+trap rollback ERR
+create_user _mosaic
+create_user _mosaicdb
+ln -sfn "$RELEASE" "$ROOT/current"
+"$NODE" "$ADMIN" configure
+"$NODE" "$ADMIN" install
+mkdir -p /usr/local/bin
+ln -sfn "$ROOT/current/bin/mosaic-server" /usr/local/bin/mosaic-server
+# Only add this service to the application firewall; never disable the firewall.
+/usr/libexec/ApplicationFirewall/socketfilterfw --add "$NODE" >/dev/null 2>&1 || true
+/usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "$NODE" >/dev/null 2>&1 || true
+"$NODE" "$ADMIN" urls
+rm -f "$BASE/previous-release" "$BASE/upgrade-backup"
+echo "安装完成。请打开“应用程序 / Mosaic Server / 打开管理后台.command”。"

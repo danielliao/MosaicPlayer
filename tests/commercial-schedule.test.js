@@ -1,0 +1,8 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {compileProgram,resolveProgram} from '../commercial/schedule.js';
+const program={playlist:[{mediaId:'a',durationMs:3000},{mediaId:'b',durationMs:2000}],music:[{mediaId:'m',durationMs:7000}],audioMode:'music',volume:0.5};
+const body={defaultProgram:program,slots:[]};
+test('shared epoch loops visual and music separately and expires to default',()=>{const m=compileProgram(body,'Asia/Shanghai',Date.parse('2026-10-20T00:00:00Z')); const r=resolveProgram(m,m.activateAt+6000);assert.equal(r.mediaId,'a');assert.equal(r.position,1);assert.equal(r.music.mediaId,'m');assert.equal(r.music.position,6);assert.equal(resolveProgram(m,m.validUntil+1000).program,program);});
+test('overnight interval belongs to start weekday and rejects overlap',()=>{const slot={name:'overnight',startDate:'2026-10-19',endDate:'2026-10-20',weekdays:[1],startTime:'23:00',endTime:'02:00',program};const m=compileProgram({...body,slots:[slot]},'Asia/Shanghai',Date.parse('2026-10-19T00:00:00Z')); assert.equal(m.intervals[0].start,Date.parse('2026-10-19T15:00:00Z'));assert.equal(m.intervals[0].end,Date.parse('2026-10-19T18:00:00Z'));assert.throws(()=>compileProgram({...body,slots:[slot,slot]},'Asia/Shanghai',m.activateAt),/overlap|重叠/);});
+test('DST gap shifts forward and repetition picks earlier offset',()=>{for(const [date,time,utc] of [['2026-03-08','02:30','2026-03-08T07:30:00Z'],['2026-11-01','01:30','2026-11-01T05:30:00Z']]){const m=compileProgram({...body,slots:[{name:'DST',startDate:date,endDate:date,weekdays:[7],startTime:time,endTime:'04:00',program}]},'America/New_York',Date.parse(date+'T00:00:00Z'));assert.equal(m.intervals[0].start,Date.parse(utc));}});
