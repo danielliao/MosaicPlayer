@@ -1180,6 +1180,10 @@ function layoutScreens(group) {
   return array(group.layout?.screens || group.screens);
 }
 function layoutPreview(layout) {
+  if (layout.mode === "freeform") {
+    const w=Math.max(1,Number(layout.canvasWidth)),h=Math.max(1,Number(layout.canvasHeight));
+    return el("div",{style:`position:relative;width:100%;aspect-ratio:${w}/${h};background:#111827;min-height:100px`},(layout.screens||[]).map((r,i)=>el("div",{style:`position:absolute;box-sizing:border-box;overflow:hidden;border:1px solid #8498ff;background:#354677;color:white;left:${r.x/w*100}%;top:${r.y/h*100}%;width:${r.width/w*100}%;height:${r.height/h*100}%`},`${i+1} · ${r.width}×${r.height} · ↻${r.rotation||0}°`)));
+  }
   const cols = Math.max(1, Math.min(16, Number(layout.cols) || 1)),
     rows = Math.max(1, Math.min(16, Number(layout.rows) || 1)),
     screens = Array.isArray(layout.screens) ? layout.screens : [];
@@ -1303,6 +1307,25 @@ function groupDialog(group = {}) {
     ),
     assignmentHint = el("div", { class: "help" }),
     preview = el("div");
+  const label=(zh,en)=>locale==="en"?en:zh;
+  const mode=select([["grid",label("规则网格","Grid")],["freeform",label("混合尺寸 / 横竖屏","Mixed sizes / orientations")]],layout.mode||"grid");
+  const cw=input(layout.canvasWidth||((layout.cols||2)*(layout.tileWidth||1920)+(layout.cols-1||0)*(layout.gapX||0)),"number",{min:1,max:65536});
+  const ch=input(layout.canvasHeight||((layout.rows||1)*(layout.tileHeight||1080)+(layout.rows-1||0)*(layout.gapY||0)),"number",{min:1,max:65536});
+  let rectangles=(layout.screens?.length?layout.screens:Array.from({length:2},(_,i)=>({col:i,row:0}))).map(r=>({...r,x:r.x??r.col*((layout.tileWidth||1920)+(layout.gapX||0)),y:r.y??r.row*((layout.tileHeight||1080)+(layout.gapY||0)),width:r.width||layout.tileWidth||1920,height:r.height||layout.tileHeight||1080,rotation:r.rotation||0}));
+  const editor=el("div"),fields=el("div");
+  const freeLayout=()=>({mode:"freeform",canvasWidth:Number(cw.value),canvasHeight:Number(ch.value),screens:rectangles});
+  const renderFields=()=>{
+    fields.replaceChildren(...rectangles.map((r,i)=>{
+      const controls=[el("strong",{},`${i+1}`)];
+      for(const [key,title] of [["x","X"],["y","Y"],["width",label("宽","Width")],["height",label("高","Height")]]){
+        const n=input(r[key],"number",{min:key==="x"||key==="y"?0:1,max:65536});n.addEventListener("input",()=>{r[key]=Number(n.value);draw();});controls.push(field(title,n));
+      }
+      const angle=select([0,90,180,270].map(n=>[String(n),`↻ ${n}°`]),String(r.rotation));angle.addEventListener("change",()=>{r.rotation=Number(angle.value);draw();});controls.push(field(label("顺时针补偿","Clockwise compensation"),angle));
+      controls.push(button(label("竖屏预设","Portrait preset"),()=>{r.width=1080;r.height=1920;r.rotation=90;renderFields();draw();}),button(label("移除","Remove"),()=>{if(rectangles.length>1){rectangles.splice(i,1);renderFields();draw();}}));
+      return row(...controls);
+    }));
+  };
+  editor.append(row(field(label("画布宽（逻辑单位）","Canvas width (logical units)"),cw),field(label("画布高","Canvas height"),ch)),el("p",{class:"help"},label("按屏幕物理相对尺寸设置覆盖区域；矩形不可重叠。旋转只补偿播放器输出。","Set coverage in relative physical sizes; rectangles must not overlap. Rotation compensates player output.")),fields,button(label("添加屏幕","Add screen"),()=>{if(rectangles.length>=16)return;const x=Math.max(...rectangles.map(r=>r.x+r.width));rectangles.push({x,y:0,width:1920,height:1080,rotation:0});cw.value=Math.max(Number(cw.value),x+1920);ch.value=Math.max(Number(ch.value),1080);renderFields();draw();}));
   if (group.id) store.disabled = true;
   const describeAssignment = () => {
     const owner = state.data.stores.find((s) => s.id === store.value);
@@ -1313,27 +1336,27 @@ function groupDialog(group = {}) {
   store.addEventListener("change", describeAssignment);
   assignedVersion.addEventListener("change", describeAssignment);
   describeAssignment();
-  const draw = () =>
-    preview.replaceChildren(
-      layoutPreview({ cols: cols.value, rows: rows.value }),
-    );
-  cols.addEventListener("input", draw);
-  rows.addEventListener("input", draw);
-  draw();
+  const draw = () => {
+    editor.hidden=mode.value!=="freeform";
+    preview.replaceChildren(layoutPreview(mode.value==="freeform"?freeLayout():{cols:cols.value,rows:rows.value}));
+  };
+  for(const control of [cols,rows,mode,cw,ch])control.addEventListener("input",draw);
+  mode.addEventListener("change",draw);
+  renderFields();draw();
   const d = dialog(group.id ? t("播放组设置") : t("添加播放组"), {
     onSave: async () => {
       if (!name.value.trim() || !store.value)
         throw new Error(t("请输入播放组名称并选择门店"));
       if (
-        Number(cols.value) * Number(rows.value) > 16 ||
+        mode.value !== "freeform" && (Number(cols.value) * Number(rows.value) > 16 ||
         Number(cols.value) < 1 ||
-        Number(rows.value) < 1
+        Number(rows.value) < 1)
       )
         throw new Error(t("每组支持 1–16 块屏幕"));
       const body = {
         name: name.value.trim(),
         storeId: store.value,
-        layout: {
+        layout: mode.value === "freeform" ? freeLayout() : {
           cols: Number(cols.value),
           rows: Number(rows.value),
           tileWidth: Number(tw.value),
@@ -1358,6 +1381,8 @@ function groupDialog(group = {}) {
     field(t("所属门店"), store),
     field(t("模板版本分配"), assignedVersion),
     assignmentHint,
+    field(label("布局类型","Layout type"),mode),
+    editor,
     row(field(t("列数"), cols), field(t("行数"), rows)),
     preview,
     row(field(t("单屏宽度 px"), tw), field(t("单屏高度 px"), th)),

@@ -298,7 +298,7 @@ import MosaicCore
         if rendered {
             programs.presentedID = programs.manifestID
         }
-        let report: [String: Any] = ["type": "report", "client": "native-macos", "version": "0.4.0", "capabilities": ["programs", "audio", "screenshot"], "programId": programs.presentedID as Any? ?? NSNull(), "mediaId": current?.media.id as Any? ?? NSNull(), "drift": drift as Any? ?? NSNull(),
+        let report: [String: Any] = ["type": "report", "client": "native-macos", "version": "0.4.0", "capabilities": ["programs", "audio", "screenshot", "freeform"], "programId": programs.presentedID as Any? ?? NSNull(), "mediaId": current?.media.id as Any? ?? NSNull(), "drift": drift as Any? ?? NSNull(),
                                      "playbackRevision": rendered ? (state?.playback.revision as Any? ?? NSNull()) : NSNull(),
                                      "rtt": transport.latency as Any? ?? NSNull(), "status": status, "width": Int(size.width), "height": Int(size.height)]
         transport.send(report)

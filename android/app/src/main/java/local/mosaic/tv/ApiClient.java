@@ -6,7 +6,7 @@ import okhttp3.*;
 import org.json.*;
 
 public final class ApiClient {
-  public static final String CAPABILITIES = "programs,audio,screenshot,updates";
+  public static final String CAPABILITIES = "programs,audio,screenshot,updates,freeform";
 
   public static final class HttpError extends IOException {
     public final int code;

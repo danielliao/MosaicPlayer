@@ -26,7 +26,7 @@ let ws,
   generation = 0,
   revoked = false;
 const programs = new BrowserProgram({key,screenId,send,error: text => label(text)});
-const capabilities = programs.supported ? ["programs", "audio"] : [];
+const capabilities = programs.supported ? ["programs", "audio", "freeform"] : ["freeform"];
 const time = () => performance.timeOrigin + performance.now();
 const synced = () => time() + offset;
 function send(msg) {
@@ -39,10 +39,12 @@ function resize() {
   if (!screen || !state) return;
   const g = geometry(state.layout, screen, innerWidth, innerHeight);
   Object.assign($("#viewport").style, {
+    transform: `rotate(${g.rotation}deg)`,
+    transformOrigin: "center",
     left: `${g.offsetX}px`,
     top: `${g.offsetY}px`,
-    width: `${state.layout.tileWidth * g.scale}px`,
-    height: `${state.layout.tileHeight * g.scale}px`,
+    width: `${g.tileWidth * g.scale}px`,
+    height: `${g.tileHeight * g.scale}px`,
   });
   Object.assign($("#wall").style, {
     width: `${g.wallWidth}px`,

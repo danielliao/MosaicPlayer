@@ -12,6 +12,30 @@ func expectNil<T>(_ value: T?) { if value != nil { fail("expected nil") } }
 func expectThrows<T>(_ body: @autoclosure () throws -> T) { do { _ = try body(); fail("expected error") } catch {} }
 
 final class CoreChecks {
+    func testFreeform() throws {
+        let json = """
+        {"mode":"freeform","canvasWidth":4280,"canvasHeight":1920,"cols":3,"rows":1,"tileWidth":1920,"tileHeight":1080,"gapX":0,"gapY":0,"screens":[{"id":"a","name":"A","row":0,"col":0,"x":0,"y":0,"width":1920,"height":1080,"rotation":0},{"id":"b","name":"B","row":0,"col":1,"x":1920,"y":0,"width":1080,"height":1920,"rotation":90},{"id":"c","name":"C","row":0,"col":2,"x":3000,"y":0,"width":1280,"height":720,"rotation":270}]}
+        """
+        let l = try JSONDecoder().decode(WallLayout.self, from: Data(json.utf8))
+        expectTrue(l.isValid)
+        let catalogData = try JSONSerialization.data(withJSONObject:["service":"mosaic-player","protocolVersion":2,"serverId":"test","name":"Mixed","published":true,"mode":"freeform","cols":16,"rows":1,"screens":(0..<16).map { ["id":"s\($0)","name":"Screen","row":0,"col":$0] as [String:Any] }])
+        expectTrue(try JSONDecoder().decode(ServerCatalog.self,from:catalogData).isValid)
+        let g = CanvasGeometry(layout:l, screen:l.screens[1], width:1920, height:1080)
+        expectEqual(g.wall.width, 4280, accuracy:0.001)
+        expectEqual(g.wall.minX, -1920, accuracy:0.001)
+        expectEqual(g.viewport.width, 1080, accuracy:0.001)
+        for rotation in [0,90,180,270] {
+            let variant=json.replacingOccurrences(of:"\"rotation\":90",with:"\"rotation\":\(rotation)")
+            let wall=try JSONDecoder().decode(WallLayout.self,from:Data(variant.utf8))
+            let crop=CanvasGeometry(layout:wall,screen:wall.screens[1],width:1920,height:1080)
+            let scale=rotation % 180 == 0 ? 1080.0/1920 : 1.0
+            expectEqual(crop.wall.width,4280*scale,accuracy:0.001)
+            expectEqual(crop.wall.minX,-1920*scale,accuracy:0.001)
+        }
+        for bad in [json.replacingOccurrences(of:"\"x\":1920",with:"\"x\":1900"), json.replacingOccurrences(of:"\"rotation\":90",with:"\"rotation\":45")] {
+            expectFalse(try JSONDecoder().decode(WallLayout.self, from:Data(bad.utf8)).isValid)
+        }
+    }
     func testServerAddressNormalization() throws {
         expectEqual(try ServerAddress(" 10.20.30.20 ").url.absoluteString, "http://10.20.30.20:3210")
         expectEqual(try ServerAddress("mosaic.local:4321").url.absoluteString, "http://mosaic.local:4321")
@@ -108,6 +132,7 @@ final class CoreChecks {
 
 let suite = CoreChecks()
 let checks: [(String, () throws -> Void)] = [
+    ("heterogeneous geometry and overlap validation", suite.testFreeform),
     ("manual server normalization and unsafe URL rejection", suite.testServerAddressNormalization),
     ("bounded private subnet discovery", suite.testDiscoverySubnetIsBoundedAndPrivate),
     ("device links, deep links, and header credentials", suite.testDeviceLinkAndNativeDeepLink),

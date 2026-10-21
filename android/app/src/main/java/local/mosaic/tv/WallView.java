@@ -92,6 +92,7 @@ final class WallView extends FrameLayout {
     canvas.scale(scale, scale);
     canvas.save();
     canvas.translate(viewport.getLeft(), viewport.getTop());
+    canvas.concat(viewport.getMatrix());
     canvas.clipRect(0, 0, viewport.getWidth(), viewport.getHeight());
     if (image.getVisibility() == VISIBLE) image.draw(canvas);
     else {
@@ -136,6 +137,12 @@ final class WallView extends FrameLayout {
             getHeight(),
             sourceW,
             sourceH);
+    int rotation=0;
+    if ("freeform".equals(layout.optString("mode"))) {
+      rotation=screen.optInt("rotation");
+      c=SyncMath.freeformCrop(layout.optDouble("canvasWidth"),layout.optDouble("canvasHeight"),screen.optDouble("x"),screen.optDouble("y"),screen.optDouble("width"),screen.optDouble("height"),rotation,getWidth(),getHeight(),sourceW,sourceH);
+    }
+    viewport.setRotation(rotation);
     LayoutParams params =
         new LayoutParams((int) Math.round(c.viewportWidth), (int) Math.round(c.viewportHeight));
     params.leftMargin = (int) Math.round(c.viewportX);

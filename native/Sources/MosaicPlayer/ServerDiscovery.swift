@@ -53,7 +53,7 @@ struct FoundServer {
             let data = try JSONSerialization.data(withJSONObject: [
                 "service": "mosaic-player", "protocolVersion": 2, "serverId": group["id"] ?? "",
                 "name": group["name"] ?? "播放组", "published": true, "cols": layout["cols"] ?? 1,
-                "rows": layout["rows"] ?? 1, "screens": layout["screens"] ?? [],
+                "rows": layout["rows"] ?? 1, "screens": layout["screens"] ?? [], "mode": layout["mode"] ?? "grid",
             ])
             let catalog = try JSONDecoder().decode(ServerCatalog.self, from: data)
             guard catalog.isValid else { throw DiscoveryError.invalidReply }
@@ -63,6 +63,7 @@ struct FoundServer {
     func pair(at address: ServerAddress, screen: PublishedScreen, code: String = "") async throws -> PlayerConnection {
         var request = URLRequest(url: address.url.appendingPathComponent("api/pair"))
         request.httpMethod = "POST"
+        request.setValue("programs,audio,screenshot,freeform", forHTTPHeaderField: "X-Mosaic-Capabilities")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["screenId": screen.id, "code": code, "name": Host.current().localizedName ?? "Mac", "client": "native-macos"])
         let (data, response) = try await responseData(for: request)

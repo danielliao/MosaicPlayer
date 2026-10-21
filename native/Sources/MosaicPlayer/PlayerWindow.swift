@@ -42,6 +42,10 @@ import MosaicCore
             ctx.setFillColor(CGColor(gray: 0, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
             let geometry = CanvasGeometry(layout: layout, screen: screen, width: Double(width), height: Double(height))
             let viewport = geometry.viewport, wall = geometry.wall.offsetBy(dx: viewport.minX, dy: viewport.minY)
+            let rotation = layout.mode == "freeform" ? screen.rotation ?? 0 : 0
+            ctx.translateBy(x: Double(width)/2, y: Double(height)/2)
+            ctx.rotate(by: -Double(rotation) * .pi / 180)
+            ctx.translateBy(x: -Double(width)/2, y: -Double(height)/2)
             let scale = max(wall.width / Double(frame.width), wall.height / Double(frame.height))
             let rect = CGRect(x: wall.midX - Double(frame.width) * scale / 2,
                               y: Double(height) - wall.midY - Double(frame.height) * scale / 2,
@@ -107,7 +111,10 @@ import MosaicCore
             viewportFrame = geometry.viewport; wallFrame = geometry.wall
         } else { viewportFrame = bounds; wallFrame = bounds }
         CATransaction.begin(); CATransaction.setDisableActions(true)
+        viewport.transform = CATransform3DIdentity
         viewport.frame = viewportFrame; wall.frame = wallFrame
+        let rotation = layoutInfo?.0.mode == "freeform" ? layoutInfo?.1.rotation ?? 0 : 0
+        viewport.transform = CATransform3DMakeRotation(Double(rotation) * .pi / 180, 0, 0, 1)
         for sub in [calibration, imageLayer, video] { sub.frame = wall.bounds }
         ring.frame = wall.bounds
         ring.path = CGPath(ellipseIn: CGRect(x: wall.bounds.width * 0.3, y: -wall.bounds.height * 0.4, width: wall.bounds.width * 0.6, height: wall.bounds.height * 1.8), transform: nil)

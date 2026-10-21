@@ -1,7 +1,7 @@
 const status = document.querySelector("#status");
 let code = "";
 async function post(path, body) {
-  const response = await fetch(path, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),redirect:"error"});
+  const response = await fetch(path, {method:"POST",headers:{"Content-Type":"application/json","X-Mosaic-Capabilities":"programs,audio,freeform"},body:JSON.stringify(body),redirect:"error"});
   const data = await response.json();
   if (!response.ok) throw Error(data.error || "请求失败");
   return data;
