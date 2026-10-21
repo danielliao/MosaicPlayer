@@ -1,7 +1,7 @@
 // Only the credential-free player application shell is cached here.
 // Accounts, APIs, media and enrollment always bypass this service worker.
-const VERSION = "mosaic-player-shell-v2";
-const SHELL = ["/play", "/player.js", "/player.css", "/sync.js", "/program.js", "/browser-program.js", "/favicon.svg"];
+const VERSION = "mosaic-player-shell-v3";
+const SHELL = ["/play", "/player.js", "/player.css", "/sync.js", "/program.js", "/browser-program.js", "/proof.js", "/transitions.js", "/favicon.svg"];
 self.addEventListener("install", event => event.waitUntil((async () => {
   const cache = await caches.open(VERSION);
   await cache.addAll(SHELL.map(url => new Request(url, {cache:"reload"})));

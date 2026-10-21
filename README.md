@@ -4,6 +4,12 @@
 
 ## 功能
 
+- 每周时间条、门店/总部共享素材、横竖双分区设计与后台生成。
+- 广告审核投放、营业时间/区域定向、入稿转换、播放回执及汇总 POS/调查报告。
+- 图片/视频混排，首帧保护和按统一时间淡化切换。
+- 不同尺寸屏幕、横竖屏混排、0/90/180/270° 旋转与拼缝；后台模拟预览。
+- AI 文案、图片、视频和音乐生成；租户自有/平台模型、加密凭据和月度额度。
+- 带权限范围的 API / MCP，Android 语音/文字控制，后台中英文切换。
 - 多租户、服务期限、门店、设备分组和角色权限，移动端后台管理。
 - 图片、视频、音乐素材；默认节目、日期/星期/时段模板；立即或定时发布。
 - 客户端完整预下载、摘要校验、同步切换、断网缓存播放及重新校时。
@@ -28,6 +34,8 @@ npm run start:commercial
 平台管理员创建租户和租户管理员，再由租户配置门店、播放组、素材和节目。电视或 Mac 输入服务器地址和后台生成的一次性配对码，选择屏幕编号后播放。
 
 原生播放器默认**不绑定任何服务器**，支持局域网发现和手工输入地址；可以通过 `MOSAIC_SERVER_URL` 在自己构建时指定地址。
+
+新功能见 [AI、API/MCP 与控制端](docs/ai-and-integrations.md)、[混合屏幕布局](docs/freeform-layout.md)、[商户编排与零售媒体](docs/merchant-retail-guide.zh-CN.md)、[转场](docs/transitions.md)。
 
 详见 [运行手册](docs/commercial-operations.md)、[API](docs/commercial-api.md)。
 
@@ -58,6 +66,7 @@ npm start
 ```sh
 npm run test:unit       # 无数据库的核心与调度检查
 npm run test:server     # 隔离的旧版 HTTP / WebSocket 集成，需 ffmpeg
+npm run test:console   # 真实 Chrome 移动视口与合成媒体交互，需 Python 3 / Chrome / ffmpeg
 npm run test:native    # Swift 核心检查，需 macOS 开发工具
 npm run test:android   # Android 单元/界面/协议检查，需 SDK 35、JDK 17、ffmpeg
 ```

@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {editableContent} from '../public/console/cms-library-ui.js';
+test('selected store edits own media and never shared headquarters resources',()=>{assert.equal(editableContent({ownerStoreId:'s1'},'s1','store_operator'),true);assert.equal(editableContent({ownerStoreId:null,shared:true},'s1','store_operator'),false);assert.equal(editableContent({ownerStoreId:null,shared:true},'','store_operator'),false);assert.equal(editableContent({ownerStoreId:'s2'},'s1','store_operator'),false);assert.equal(editableContent({ownerStoreId:'s1'},'s1','viewer'),false);});
+test('headquarters sharing controls require headquarters workspace ownership',()=>{assert.equal(editableContent({ownerStoreId:null},'','tenant_admin'),true);assert.equal(editableContent({ownerStoreId:null},'s1','tenant_admin'),false);assert.equal(editableContent({ownerStoreId:'s1'},'','tenant_admin'),false);});

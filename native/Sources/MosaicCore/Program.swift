@@ -9,8 +9,9 @@ public struct ProgramContent: Codable, Equatable {
     public let music: [ProgramEntry]
     public let audioMode: String
     public let volume: Double
+    public let transition: ProgramTransition?
     public var isValid: Bool {
-        !playlist.isEmpty && playlist.count <= 1000 && music.count <= 1000 &&
+        (transition?.isValid(shortest:playlist.map(\.durationMs).min() ?? 0) ?? true) && !playlist.isEmpty && playlist.count <= 1000 && music.count <= 1000 &&
         (playlist + music).allSatisfy { !$0.mediaId.isEmpty && $0.durationMs.isFinite && $0.durationMs > 0 } &&
         ["muted", "music", "video"].contains(audioMode) && volume.isFinite && (0...1).contains(volume)
     }

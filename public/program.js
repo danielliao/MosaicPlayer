@@ -19,7 +19,7 @@ export function programCursor(manifest, now, music = false) {
   const length = entries.reduce((sum, x) => sum + x.durationMs, 0);
   let offset = Math.max(0, now - anchor) % length;
   for (const item of entries) {
-    if (offset < item.durationMs) return { mediaId: item.mediaId, position: offset / 1000, epoch: now - offset, duration: item.durationMs / 1000 };
+    if (offset < item.durationMs) return { mediaId: item.mediaId, position: offset / 1000, epoch: now - offset, duration: item.durationMs / 1000, ...(content.transition ? {transition:content.transition} : {}) };
     offset -= item.durationMs;
   }
   return null;

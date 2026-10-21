@@ -141,6 +141,7 @@ public class PlaybackProgramIntegrationTest {
           });
       server.start();
       WallView wall = new WallView(RuntimeEnvironment.getApplication());
+      wall.layout(0, 0, 1920, 1080);
       PlaybackEngine engine =
           new PlaybackEngine(
               RuntimeEnvironment.getApplication(),
@@ -194,6 +195,8 @@ public class PlaybackProgramIntegrationTest {
           (long)
               org.robolectric.util.ReflectionHelpers.getField(engine, "displayedPlaybackRevision"));
 
+      wall.measure(android.view.View.MeasureSpec.makeMeasureSpec(1920, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(1080, android.view.View.MeasureSpec.EXACTLY));
+      wall.layout(0, 0, 1920, 1080);
       manifest.put("activateAt", (long) transport.now() + 500);
       state.put("program", manifest);
       state.remove("pendingProgram");

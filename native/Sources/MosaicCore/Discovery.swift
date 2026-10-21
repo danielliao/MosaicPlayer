@@ -60,7 +60,8 @@ public struct ServerCatalog: Decodable {
     public let cols: Int
     public let rows: Int
     public let screens: [PublishedScreen]
-    enum CodingKeys: String, CodingKey { case service, protocolVersion, serverId, name, published, cols, rows, screens }
+    public let mode: String?
+    enum CodingKeys: String, CodingKey { case service, protocolVersion, serverId, name, published, cols, rows, screens, mode }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         service = try c.decode(String.self, forKey: .service); protocolVersion = try c.decode(Int.self, forKey: .protocolVersion)
@@ -68,11 +69,12 @@ public struct ServerCatalog: Decodable {
         published = try c.decodeIfPresent(Bool.self, forKey: .published) ?? false
         cols = try c.decodeIfPresent(Int.self, forKey: .cols) ?? 1; rows = try c.decodeIfPresent(Int.self, forKey: .rows) ?? 1
         screens = try c.decodeIfPresent([PublishedScreen].self, forKey: .screens) ?? []
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
     }
     public var isValid: Bool {
         service == "mosaic-player" && [1, 2].contains(protocolVersion) && !serverId.isEmpty &&
-        (1...8).contains(cols) && (1...8).contains(rows) && cols * rows <= 16 &&
-        screens.count == (published ? cols * rows : 0) &&
+        (1...(mode == "freeform" ? 16 : 8)).contains(cols) && (1...8).contains(rows) && cols * rows <= 16 &&
+        (mode == "freeform" ? (!published ? screens.isEmpty : (1...16).contains(screens.count)) : screens.count == (published ? cols * rows : 0)) &&
         Set(screens.map(\.id)).count == screens.count &&
         Set(screens.map { "\($0.row),\($0.col)" }).count == screens.count &&
         screens.allSatisfy {

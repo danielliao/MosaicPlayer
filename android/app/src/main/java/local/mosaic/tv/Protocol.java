@@ -82,6 +82,10 @@ public final class Protocol {
 
   public static JSONObject validateState(JSONObject state, String screenId) throws JSONException {
     JSONObject layout = state.getJSONObject("layout"), screen = screen(state, screenId);
+    if ("freeform".equals(layout.optString("mode"))) {
+      validateFreeform(layout);
+      state.getJSONObject("playback"); state.getJSONArray("media"); return state;
+    }
     int cols = layout.getInt("cols"), rows = layout.getInt("rows");
     if (cols < 1
         || cols > 16
@@ -98,6 +102,26 @@ public final class Protocol {
     state.getJSONObject("playback");
     state.getJSONArray("media");
     return state;
+  }
+
+  private static double bounded(JSONObject o,String key,int min) throws JSONException {
+    Object raw=o.get(key);
+    if(!(raw instanceof Number))throw new JSONException("Invalid rectangle");
+    double v=((Number)raw).doubleValue();
+    if(!Double.isFinite(v)||v<min||v>65536||v!=Math.rint(v))throw new JSONException("Invalid rectangle");
+    return v;
+  }
+  public static void validateFreeform(JSONObject layout) throws JSONException {
+    double cw=bounded(layout,"canvasWidth",1),ch=bounded(layout,"canvasHeight",1);
+    JSONArray screens=layout.getJSONArray("screens");Set<String> ids=new HashSet<>();
+    if(screens.length()<1||screens.length()>16)throw new JSONException("Invalid screen count");
+    for(int i=0;i<screens.length();i++) {
+      JSONObject a=screens.getJSONObject(i);
+      double x=bounded(a,"x",0),y=bounded(a,"y",0),w=bounded(a,"width",1),h=bounded(a,"height",1);
+      double r=a.has("rotation")?bounded(a,"rotation",0):0;
+      if(x+w>cw||y+h>ch||!(r==0||r==90||r==180||r==270)||!ids.add(a.getString("id")))throw new JSONException("Invalid rectangle");
+      for(int j=0;j<i;j++){JSONObject b=screens.getJSONObject(j);if(x<b.getDouble("x")+b.getDouble("width")&&b.getDouble("x")<x+w&&y<b.getDouble("y")+b.getDouble("height")&&b.getDouble("y")<y+h)throw new JSONException("Overlapping rectangles");}
+    }
   }
 
   public static JSONObject message(String type) {

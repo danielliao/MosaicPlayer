@@ -47,3 +47,48 @@ test('store default executes for inheriting existing/new groups while explicit o
  for(const d of await json('/api/deployments',a))if(['preparing','waiting'].includes(d.status))await json('/api/deployments/'+d.id+'/cancel',a,{});});
 test('batch keeps eligible group deployment and independent cache-failed record; retry does not replay success',async()=>{const groups=await json('/api/groups',a),eligible=groups.find(g=>g.name==='Inherited existing'),blocked=groups.find(g=>g.name==='Other');await deviceRequest('/api/device/report',{versionCode:2,cacheBudgetBytes:0,capabilities:['programs','audio','updates']});const results=await json('/api/deployments',a,{versionId:visualVersion.id,groupIds:[eligible.id,blocked.id]});assert.equal(results.length,2);assert.equal(results[0].status,'preparing');assert.equal(results[1].status,'failed');assert.match(results[1].errors.submission,/缓存/);assert.equal(results[0].batchId,results[1].batchId);assert.equal((await json('/api/groups',a)).find(g=>g.id===eligible.id).pendingId,results[0].id);await deviceRequest('/api/device/report',{versionCode:2,cacheBudgetBytes:1024**3,capabilities:['programs','audio','updates']});const retry=await json('/api/deployments/'+results[1].id+'/retry',a,{});assert.equal(retry.groupId,blocked.id);assert.equal((await json('/api/groups',a)).find(g=>g.id===blocked.id).inheritsStoreTemplate,false);assert.equal((await json('/api/groups',a)).find(g=>g.id===eligible.id).pendingId,results[0].id);const before=(await json('/api/deployments',a)).length;assert.equal((await request('/api/deployments',a,{versionId:visualVersion.id,groupIds:[eligible.id,randomUUID()]})).status,404);assert.equal((await json('/api/deployments',a)).length,before);for(const d of [results[0],retry])await json('/api/deployments/'+d.id+'/cancel',a,{});});
 test('direct playback confirms only an actual matching revision/preparation receipt, never ready or same media alone',async()=>{const group=(await json('/api/groups',a)).find(g=>g.name==='Other'),mediaId=visualVersion.body.defaultProgram.playlist[0].mediaId;const d=await json('/api/groups/'+group.id+'/playback',a,{action:'play',mediaId});await deviceRequest('/api/device/report',{type:'ready',id:d.id});await service.tick();await owner.query("UPDATE deployments SET activate_at=now()-interval '1 second' WHERE id=$1",[d.id]);await service.tick();const playback=(await(await deviceRequest('/api/state')).json()).state.playback;assert.equal((await json('/api/deployments',a)).find(x=>x.id===d.id).status,'partial');await deviceRequest('/api/device/report',{status:'playing',mediaId,playbackRevision:playback.revision-1,capabilities:['programs','audio','updates']});assert.equal((await json('/api/deployments',a)).find(x=>x.id===d.id).status,'partial');await deviceRequest('/api/device/report',{status:'playing',mediaId,capabilities:['programs','audio','updates']});assert.equal((await json('/api/deployments',a)).find(x=>x.id===d.id).status,'partial');await deviceRequest('/api/device/report',{status:'playing',mediaId,playbackRevision:playback.revision,preparationId:playback.preparationId,capabilities:['programs','audio','updates']});assert.equal((await json('/api/deployments',a)).find(x=>x.id===d.id).status,'active');});
+
+test('freeform remains tenant scoped and requires upgraded players for edit, bind, pair and state',async()=>{
+ const bound=(await json('/api/groups',a)).find(g=>g.name==='Other');
+ const layout={mode:'freeform',canvasWidth:4280,canvasHeight:1920,screens:[{x:0,y:0,width:1920,height:1080,rotation:0},{x:1920,y:0,width:1080,height:1920,rotation:90},{x:3000,y:0,width:1280,height:720,rotation:270}]};
+ assert.equal((await request('/api/groups/'+bound.id,a,{layout},'PUT')).status,409);
+ const g=await json('/api/groups',a,{name:'Mixed wall',storeId:bound.storeId,layout});
+ assert.equal((await request('/api/groups/'+g.id,b,{layout},'PUT')).status,404);
+ assert.equal((await request('/api/devices/'+deviceA.deviceId,a,{groupId:g.id,screenId:g.layout.screens[0].id},'PUT')).status,409);
+ const pairing=await json('/api/pairing',a,{storeId:bound.storeId,groupId:g.id});
+ assert.equal((await request('/api/pair',null,{code:pairing.code,screenId:g.layout.screens[0].id})).status,409);
+ await deviceRequest('/api/device/report',{capabilities:['programs','audio','freeform']});
+ await json('/api/devices/'+deviceA.deviceId,a,{groupId:g.id,screenId:g.layout.screens[0].id},'PUT');
+ assert.equal((await deviceRequest('/api/state')).status,409);
+ const state=await (await deviceRequest('/api/state',null,{'X-Mosaic-Capabilities':'programs,audio,freeform'})).json();
+ assert.equal(state.state.layout.screens[1].width,1080);
+ const changed=await json('/api/groups/'+g.id,a,{layout:{...g.layout,screens:g.layout.screens.map(s=>({...s,key:'injected',rotation:180}))}},'PUT');
+ assert.deepEqual(changed.layout.screens.map(s=>s.id),g.layout.screens.map(s=>s.id));
+ assert.equal(changed.layout.screens.some(s=>'key' in s),false);
+});
+
+test('completed playback events dedupe, preserve tenant scope, exclude heartbeat and reject stale bindings',async()=>{
+ const other=(await json('/api/groups',a)).find(g=>g.name==='Other');
+ const g=await json('/api/groups',a,{name:'Proof fixture',storeId:other.storeId});
+ await json('/api/devices/'+deviceA.deviceId,a,{groupId:g.id,screenId:g.layout.screens[0].id},'PUT');
+ const now=Date.now(),mediaId='proof-'+suffix,foreign='foreign-proof-'+suffix;
+ for(const [id,tenant] of [[mediaId,a.user.tenantId],[foreign,b.user.tenantId]])await owner.query('INSERT INTO media(id,tenant_id,metadata,filename,size)VALUES($1,$2,$3,$4,1)',[id,tenant,{id,type:'video',duration:1,width:1920,height:1080},id+'.mp4']);
+ await owner.query("UPDATE devices SET binding_changed_at=$2 WHERE id=$1",[deviceA.deviceId,new Date(now-10000)]);
+ await owner.query('UPDATE groups SET playback=$2 WHERE id=$1',[g.id,{mediaId,epoch:now-10000,paused:false,position:0,revision:1}]);
+ const e={eventId:randomUUID(),mediaId,programId:null,startAt:now-2000,endAt:now-1000,durationMs:1000,tenantId:b.user.tenantId,storeId:storeB.id};
+ const send=events=>deviceRequest('/api/device/play-events',{events});
+ assert.equal((await request('/api/device/play-events',a,{events:[e]})).status,403);
+ assert.equal((await send(Array(51).fill(e))).status,400);
+ assert.deepEqual((await(await send([e])).json()).accepted,[e.eventId]);
+ assert.deepEqual((await(await send([e])).json()).accepted,[e.eventId]);
+ const row=(await owner.query('SELECT * FROM playback_events WHERE event_id=$1',[e.eventId])).rows[0];assert.equal(row.tenant_id,a.user.tenantId);assert.equal(row.group_id,g.id);assert.equal(row.store_id,g.storeId);
+ const overlap=await(await send([{...e,eventId:randomUUID()}])).json();assert.equal(overlap.rejected[0].reason,'overlapping_segment');
+ const bad=await(await send([{...e,eventId:randomUUID(),mediaId:foreign}])).json();assert.equal(bad.rejected[0].reason,'unauthorized_segment');
+ assert.equal((await tx(pool,{tenantId:b.user.tenantId},c=>c.query('SELECT * FROM playback_events'))).rowCount,0);
+ await deviceRequest('/api/device/report',{status:'playing',mediaId});assert.equal(Number((await owner.query('SELECT count(*) FROM playback_events WHERE device_id=$1',[deviceA.deviceId])).rows[0].count),1);
+ const programId=randomUUID(),manifest={id:programId,activateAt:now-8000,validUntil:now+100000,defaultProgram:{playlist:[{mediaId,durationMs:1000}],music:[],audioMode:'muted',volume:0},intervals:[]};
+ await owner.query("INSERT INTO deployments(id,tenant_id,group_id,manifest,activate_at,deadline,status)VALUES($1,$2,$3,$4,$5,$6,'active')",[programId,a.user.tenantId,g.id,manifest,new Date(now-8000),new Date(now+60000)]);
+ const historical={...e,eventId:randomUUID(),programId,startAt:now-5000,endAt:now-4000};assert.deepEqual((await(await send([historical])).json()).accepted,[historical.eventId]);
+ await json('/api/devices/'+deviceA.deviceId,a,{groupId:other.id,screenId:other.layout.screens[0].id},'PUT');
+ assert.equal((await(await send([{...historical,eventId:randomUUID()}])).json()).rejected[0].reason,'binding_changed');
+});

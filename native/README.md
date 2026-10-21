@@ -1,7 +1,7 @@
 # Mosaic 原生 macOS 播放端
 
 Swift / AppKit / AVFoundation 原生播放器，支持 macOS 13+、Apple Silicon / Intel。
-当前源码版本 0.4.0。视频和图像原生解码，无 WebView 或 Electron。
+当前源码版本 0.5.0。视频和图像原生解码，无 WebView 或 Electron。
 
 支持门店配对码、屏幕位置选择、完整节目缓存、分时段图片/视频/音乐、断网恢复、
 当前应用画面截图、显示器选择和全屏。只由指定声音屏输出音频。

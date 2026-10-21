@@ -22,6 +22,8 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
     void diagnostics(String text);
   }
 
+  private final PlaybackEvidence proofTracker=new PlaybackEvidence();
+  private final ProofReporter proof;
   private final Context context;
   private final WallView wall;
   private final Events events;
@@ -83,6 +85,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
   PlaybackEngine(
       Context context, WallView wall, String base, String key, String screenId, Events events) {
     this.context = context;
+    proof=new ProofReporter(context,api,base,key,screenId);
     this.wall = wall;
     this.screenId = screenId;
     this.events = events;
@@ -379,8 +382,15 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
       item.player.addListener(
           new Player.Listener() {
             @Override
+            public void onRenderedFirstFrame(){if(current==item)wall.firstFrame(item.player);}
+
+            @Override
+            public void onIsPlayingChanged(boolean playing) { if(!playing && current==item)proofTracker.reset(); }
+
+            @Override
             public void onPlaybackStateChanged(int state) {
               if (closed || prepared != item && current != item) return;
+              if (state == Player.STATE_BUFFERING && current == item) proofTracker.reset();
               if (state == Player.STATE_BUFFERING && item.ready && current == item) rebufferCount++;
               if (state == Player.STATE_READY && !item.ready) {
                 item.ready = true;
@@ -391,6 +401,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
 
             @Override
             public void onPlayWhenReadyChanged(boolean ready, int reason) {
+              if(!ready && current==item)proofTracker.reset();
               if (current == item
                   && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) {
                 item.audioFocusLost = true;
@@ -424,7 +435,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
     status = "error";
     if (prepared != null && prepared.media == media) releasePrepared();
     if (current != null && current.media == media) {
-      wall.clear();
+      wall.clearKeepingSnapshot();
       current.release();
       current = null;
       events.contentVisible(false);
@@ -448,12 +459,15 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
             long tickAt = SystemClock.elapsedRealtime();
             if (lastTickAt != 0) maxTickGap = Math.max(maxTickGap, tickAt - lastTickAt);
             lastTickAt = tickAt;
+            wall.transitionTick(transport.now());
+            observeProof();
             JSONObject scheduled = programs.render((long) transport.now());
             if (scheduled != null && scheduled != state) {
               state = scheduled;
               reconcile();
             }
             updatePlayback();
+            observeProof();
             if (programReadyId != null) stageProgram(programReadyId);
             if (programReadyManifest != null && programReadyManifest.equals(displayedProgramId)) {
               programReadyId = null;
@@ -523,6 +537,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
               reconcile();
             }
           } catch (Exception e) {
+            proofTracker.reset();
             events.status("播放配置错误：" + e.getMessage());
           }
           long delay = 50;
@@ -583,6 +598,9 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
     }
     boolean due = paused || now >= p.optDouble("epoch");
     if (prepared != null && prepared.ready && id.equals(prepared.media.optString("id")) && due) {
+      ProgramTimeline.Selection incoming=programs.selection((long)now);
+      JSONObject transition=incoming==null?null:incoming.program.optJSONObject("transition");
+      if(!wall.beginTransition(transition==null?"cut":transition.optString("type","cut"),transition==null?0:transition.optLong("durationMs"),p.optDouble("epoch"))){status="waiting";return;}
       Loaded old = current;
       current = prepared;
       prepared = null;
@@ -611,7 +629,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
         Protocol.screen(state, screenId),
         current.media.optDouble("width", 1920),
         current.media.optDouble("height", 1080));
-    if (due
+    if (due && wall.contentReady()
         && (current.player == null || current.player.getPlaybackState() == Player.STATE_READY)) {
       displayedProgramId = programs.programId();
       displayedProgramVersionId = programs.programVersionId();
@@ -649,6 +667,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
             correctionsEnabled);
     if (decision.seek) {
       if (lastRevision == revision) correctionSeeks++;
+      proofTracker.reset();
       player.seekTo((long) (target * 1000));
       lastRevision = revision;
     }
@@ -674,6 +693,21 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
     player.setVolume(
         voice ? (float) Math.max(0, Math.min(1, program.program.optDouble("volume", 0))) : 0);
     player.setPlayWhenReady(!paused && due && !current.audioFocusLost);
+  }
+
+  private void observeProof() throws Exception {
+    double now=transport.now();JSONObject p=state==null?null:state.optJSONObject("playback");
+    ProgramTimeline.Selection selection=programs.selection((long)now);
+    long duration=selection!=null?selection.visual.durationMs:current==null?0:Math.round(current.media.optDouble("duration",0)*1000);
+    double epoch=p==null?0:p.optDouble("epoch");
+    long start=selection!=null?(long)now-selection.visual.positionMs:duration>0?Math.round(epoch)+((long)Math.floor((now-epoch)/duration))*duration:0;
+    boolean ready=current!=null&&p!=null&&current.media.optString("id").equals(p.optString("mediaId"))&&!p.optBoolean("paused")&&"playing".equals(status)&&!wall.transitionVisible()&&now>=epoch&&(transport.clock.ready()||programs.programId()!=null)&&(current.bitmap!=null||current.player!=null&&current.player.isPlaying()&&current.player.getPlaybackState()==Player.STATE_READY&&Math.abs(lastDrift)<.18);
+    if(current!=null){
+      PlaybackEvidence.Sample sample=new PlaybackEvidence.Sample(current.media.optString("id"),programs.programId(),programs.programId()!=null?programs.programId():"direct:"+(p==null?-1:p.optLong("revision")),start,duration,now,ready&&(selection!=null||"video".equals(current.media.optString("type"))));
+      sample.video=current.player!=null;sample.positionMs=current.player==null?0:current.player.getCurrentPosition();sample.sourceDurationMs=current.media.optDouble("duration",0)*1000;
+      proof.add(proofTracker.observe(sample));
+    }else proofTracker.reset();
+    proof.flush();
   }
 
   private void preloadNext() throws Exception {
@@ -812,6 +846,7 @@ final class PlaybackEngine implements SyncTransport.Listener, AutoCloseable {
   public void close() {
     if (closed) return;
     closed = true;
+    proofTracker.reset();proof.close();
     main.removeCallbacksAndMessages(null);
     transport.close();
     programs.close();

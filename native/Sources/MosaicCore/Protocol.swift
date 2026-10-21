@@ -37,7 +37,7 @@ public struct PlayerConnection: Codable, Equatable {
     public func request(_ path: String, websocket: Bool = false) -> URLRequest {
         var req = URLRequest(url: endpoint(path, websocket: websocket))
         req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        req.setValue("programs,audio,screenshot", forHTTPHeaderField: "X-Mosaic-Capabilities")
+        req.setValue("programs,audio,screenshot,freeform", forHTTPHeaderField: "X-Mosaic-Capabilities")
         return req
     }
 }
@@ -62,9 +62,13 @@ public struct WallScreen: Codable, Equatable {
     public let name: String
     public let row: Int
     public let col: Int
+    public var x: Double? = nil, y: Double? = nil, width: Double? = nil, height: Double? = nil
+    public var rotation: Int? = nil
     public init(id: String, name: String, row: Int, col: Int) { self.id = id; self.name = name; self.row = row; self.col = col }
 }
 public struct WallLayout: Codable, Equatable {
+    public var mode: String? = nil
+    public var canvasWidth: Double? = nil, canvasHeight: Double? = nil
     public let cols: Int
     public let rows: Int
     public let tileWidth: Double
@@ -76,7 +80,16 @@ public struct WallLayout: Codable, Equatable {
         self.cols = cols; self.rows = rows; self.tileWidth = tileWidth; self.tileHeight = tileHeight; self.gapX = gapX; self.gapY = gapY; self.screens = screens
     }
     public var isValid: Bool {
-        (1...8).contains(cols) && (1...8).contains(rows) && cols * rows <= 16 &&
+        if mode == "freeform" {
+            func integer(_ n:Double?, _ min:Double) -> Bool { guard let n else { return false }; return n.isFinite && n >= min && n <= 65536 && n.rounded() == n }
+            guard integer(canvasWidth,1), integer(canvasHeight,1), (1...16).contains(screens.count), Set(screens.map(\.id)).count == screens.count else { return false }
+            for (i,s) in screens.enumerated() {
+                guard integer(s.x,0), integer(s.y,0), integer(s.width,1), integer(s.height,1), [0,90,180,270].contains(s.rotation ?? 0), s.x!+s.width! <= canvasWidth!, s.y!+s.height! <= canvasHeight! else { return false }
+                for b in screens.prefix(i) { if s.x! < b.x!+b.width! && b.x! < s.x!+s.width! && s.y! < b.y!+b.height! && b.y! < s.y!+s.height! { return false } }
+            }
+            return true
+        }
+        return (mode == nil || mode == "grid") && (1...8).contains(cols) && (1...8).contains(rows) && cols * rows <= 16 &&
         tileWidth.isFinite && tileHeight.isFinite && (320...7680).contains(tileWidth) && (240...4320).contains(tileHeight) &&
         gapX.isFinite && gapY.isFinite && (0...500).contains(gapX) && (0...500).contains(gapY) &&
         screens.count == cols * rows && Set(screens.map(\.id)).count == screens.count &&

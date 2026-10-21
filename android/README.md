@@ -50,3 +50,13 @@ MOSAIC_SERVER_URL=https://signage.example.com npm run build:android
 单元、Robolectric 和协议测试不能替代电视硬件验收。需现场验证解码能力、遥控器、
 音频焦点、休眠、长时间循环和多屏接缝。软件校时不提供硬件帧锁。
 播放诊断可显示渲染帧率估算、丢帧、变速、定位和缓冲次数；计数不包含媒体密钥。
+
+## Controller mode (0.3.0)
+
+Open **控制器 / Controller** from player setup on the same APK. The controller is a separate activity and uses a tenant administrator-created API key with `read` and `control` scopes, never a playback pairing key. Enter a server origin, save/load the authorized groups and media, then select a group. Both the server and key are encrypted together with Android Keystore AES-GCM; the key input is masked, screen capture and backup are disabled, and errors never display credentials or server response bodies. Use HTTPS outside a trusted LAN: plain HTTP exposes bearer credentials to the network.
+
+Choose 中文 or English in the controller. The preference persists for controller and core setup labels. Legacy playback/diagnostic/server messages remain Chinese; user-entered media names are never translated. Language changes apply to player setup on its next creation.
+
+Voice uses the installed system recognizer only while requested in the foreground; no microphone permission or background recorder is added. System recognizers may use their provider's network service. If unavailable, use the text box. Supported commands are exactly `pause` / `暂停`, `resume` / `继续` / `恢复`, and `play Exact media name` / `播放 精确媒体名`. Media names must match one authorized item exactly; duplicates and unknown text cannot send. Recognized text only populates an editable draft. Review and explicitly confirm the selected group and action before each command, including pause/resume buttons. Pause/resume of scheduled programs may be rejected by the server. Server acceptance does not prove physical TV playback.
+
+Local verification uses unit/parser tests, MockWebServer API tests and a Robolectric confirmation flow. Real microphone availability, recognizer/provider behavior, touch/remote focus navigation, device Keystore persistence and physical TV control still require real-device acceptance. No provider or TV is contacted by tests.

@@ -4,10 +4,12 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile.commercial
-    image: mosaic-commercial:0.2.0
+    image: mosaic-commercial:0.3.0
     restart: unless-stopped
     environment:
       COMMERCIAL_DATABASE_URL: ${COMMERCIAL_DATABASE_URL:?Set non-owner runtime database URL}
+      COMMERCIAL_AI_ENABLED: ${COMMERCIAL_AI_ENABLED:-false}
+      COMMERCIAL_AI_ALLOWED_HOSTS: ${COMMERCIAL_AI_ALLOWED_HOSTS:-}
       COMMERCIAL_DATA_DIR: /data
       COMMERCIAL_DOWNLOAD_DIR: /downloads
       COMMERCIAL_COOKIE_SECURE: 'true'

@@ -126,7 +126,7 @@ import MosaicCore
     }
     @objc private func forget() { controller.disconnectClicked() }
     @objc private func about() {
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Mosaic Player", .applicationVersion: "0.4.0", .version: "原生 macOS · Swift / AVFoundation", .credits: NSAttributedString(string: "多设备，共享同一条时间线。\nmacOS 13 及以上 · Apple Silicon / Intel")])
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: "Mosaic Player", .applicationVersion: "0.5.0", .version: "原生 macOS · Swift / AVFoundation", .credits: NSAttributedString(string: "多设备，共享同一条时间线。\nmacOS 13 及以上 · Apple Silicon / Intel")])
     }
     @objc private func clearCache() {
         let alert = NSAlert(); alert.messageText = "停止播放并清除本机缓存？"; alert.informativeText = "后台原始素材不会删除。重新连接后会再次下载素材。"

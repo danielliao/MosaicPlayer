@@ -1,0 +1,30 @@
+<resources>
+    <string name="play_action">Play</string>
+    <string name="controller">Controller</string>
+    <string name="language">Language / 语言</string>
+    <string name="server">Server URL (HTTPS or trusted LAN HTTP)</string>
+    <string name="api_key">Admin-created API key (read, control)</string>
+    <string name="load_groups">Save and load groups</string>
+    <string name="transcript">Command: pause, resume, play Exact media name</string>
+    <string name="speak">Speak</string>
+    <string name="review">Review command</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Resume</string>
+    <string name="back">Back</string>
+    <string name="loading">Working…</string>
+    <string name="ready">Loaded. Available media:</string>
+    <string name="failed">Failed. Check network, key scopes and server.</string>
+    <string name="speech_unavailable">Speech unavailable. Type your command.</string>
+    <string name="invalid_command">Select a group and use a supported command with an exact unique media name.</string>
+    <string name="confirm">Confirm target and command</string>
+    <string name="send">Confirm and send</string>
+    <string name="sent">Server accepted command</string>
+    <string name="setup_title">Mosaic TV synchronized player</string>
+    <string name="setup_help">Connect on the same LAN and choose this TV position. Use arrows and OK.</string>
+    <string name="connect_server">Connect</string>
+    <string name="search_server">Find LAN servers</string>
+    <string name="pair_code">One-time pairing code from console</string>
+    <string name="verify_pair">Verify code and choose screen</string>
+    <string name="screens">Available screens</string>
+    <string name="exit">Exit</string>
+</resources>

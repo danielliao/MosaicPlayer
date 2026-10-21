@@ -1,0 +1,7 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {intakeReport,conversionArgs} from '../commercial/intake.js';
+test('retail intake is advisory and distinguishes missing audio checks',()=>{const report=intakeReport({streams:[{codec_type:'video',codec_name:'h264',width:3840,height:2160,r_frame_rate:'30000/1001',bit_rate:'15000000',pix_fmt:'yuv420p'},{codec_type:'audio',codec_name:'aac',bit_rate:'192000'}],format:{duration:'15',format_name:'mov,mp4'}});assert.equal(report.mappingEligible,true);assert.ok(report.checks.find(c=>c.code==='duration').pass);assert.equal(report.checks.find(c=>c.code==='loudness').pass,null);assert.ok(!intakeReport({streams:[],format:{}}).mappingEligible);});
+test('quadrants map top left, top right and bottom left; TV profile preserves 48:9',()=>{const args=conversionArgs('source','dest','image','tv');const graph=args[args.indexOf('-filter_complex')+1];assert.match(graph,/crop=1920:1080:1920:0/);assert.match(graph,/crop=1920:1080:0:1080/);assert.match(graph,/hstack=inputs=3,scale=2880:540/);assert.throws(()=>conversionArgs('a','b','audio','tv'));assert.throws(()=>conversionArgs('a','b','image','unknown'));});
+
+test('already cancelled conversion never starts an FFmpeg job',async()=>{const {runConversion}=await import('../commercial/intake.js');const c=new AbortController();c.abort();await assert.rejects(runConversion(['-v','error','-f','lavfi','-i','color=s=16x16:d=0.1','-f','null','-'],c.signal),/cancelled/);});

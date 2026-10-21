@@ -39,14 +39,15 @@ public struct CanvasGeometry: Equatable {
     public let wall: CGRect
     public let scale: Double
     public init(layout: WallLayout, screen: WallScreen, width: Double, height: Double) {
-        let scale = min(width / layout.tileWidth, height / layout.tileHeight)
+        let free = layout.mode == "freeform"
+        let tileW = free ? screen.width! : layout.tileWidth, tileH = free ? screen.height! : layout.tileHeight
+        let swap = free && (screen.rotation ?? 0) % 180 != 0
+        let scale = min(width / (swap ? tileH : tileW), height / (swap ? tileW : tileH))
         self.scale = scale
-        viewport = CGRect(x: (width - layout.tileWidth * scale) / 2,
-                          y: (height - layout.tileHeight * scale) / 2,
-                          width: layout.tileWidth * scale, height: layout.tileHeight * scale)
-        wall = CGRect(x: -Double(screen.col) * (layout.tileWidth + layout.gapX) * scale,
-                      y: -Double(screen.row) * (layout.tileHeight + layout.gapY) * scale,
-                      width: (Double(layout.cols) * layout.tileWidth + Double(layout.cols - 1) * layout.gapX) * scale,
-                      height: (Double(layout.rows) * layout.tileHeight + Double(layout.rows - 1) * layout.gapY) * scale)
+        viewport = CGRect(x:(width-tileW*scale)/2,y:(height-tileH*scale)/2,width:tileW*scale,height:tileH*scale)
+        wall = CGRect(x: -(free ? screen.x! : Double(screen.col)*(layout.tileWidth+layout.gapX))*scale,
+                      y: -(free ? screen.y! : Double(screen.row)*(layout.tileHeight+layout.gapY))*scale,
+                      width:(free ? layout.canvasWidth! : Double(layout.cols)*layout.tileWidth+Double(layout.cols-1)*layout.gapX)*scale,
+                      height:(free ? layout.canvasHeight! : Double(layout.rows)*layout.tileHeight+Double(layout.rows-1)*layout.gapY)*scale)
     }
 }

@@ -81,19 +81,24 @@ public final class SyncMath {
       double viewH,
       double sourceW,
       double sourceH) {
+    return freeformCrop(cols*tileW+(cols-1)*gapX, rows*tileH+(rows-1)*gapY,
+      col*(tileW+gapX),row*(tileH+gapY),tileW,tileH,0,viewW,viewH,sourceW,sourceH);
+  }
+
+  public static Crop freeformCrop(double canvasW,double canvasH,double x,double y,double tileW,double tileH,int rotation,double viewW,double viewH,double sourceW,double sourceH) {
     Crop c = new Crop();
-    double scale = Math.min(viewW / tileW, viewH / tileH);
+    boolean swap=rotation%180!=0;
+    double scale = Math.min(viewW / (swap?tileH:tileW), viewH / (swap?tileW:tileH));
     c.viewportWidth = tileW * scale;
     c.viewportHeight = tileH * scale;
     c.viewportX = (viewW - c.viewportWidth) / 2;
     c.viewportY = (viewH - c.viewportHeight) / 2;
-    double wallW = (cols * tileW + (cols - 1) * gapX) * scale,
-        wallH = (rows * tileH + (rows - 1) * gapY) * scale,
+    double wallW = canvasW * scale, wallH = canvasH * scale,
         cover = Math.max(wallW / sourceW, wallH / sourceH);
     c.contentWidth = sourceW * cover;
     c.contentHeight = sourceH * cover;
-    c.contentX = (wallW - c.contentWidth) / 2 - col * (tileW + gapX) * scale;
-    c.contentY = (wallH - c.contentHeight) / 2 - row * (tileH + gapY) * scale;
+    c.contentX = (wallW - c.contentWidth) / 2 - x * scale;
+    c.contentY = (wallH - c.contentHeight) / 2 - y * scale;
     return c;
   }
 }

@@ -7,8 +7,8 @@ android {
         applicationId "local.mosaic.tv"
         minSdk 23
         targetSdk 35
-        versionCode 3
-        versionName "0.2.0"
+        versionCode 4
+        versionName "0.3.0"
         def server = System.getenv("MOSAIC_SERVER_URL") ?: ""
         buildConfigField "String", "DEFAULT_SERVER", groovy.json.JsonOutput.toJson(server)
         buildConfigField "boolean", "ALLOW_LAN_HTTP_UPDATES", (System.getenv("MOSAIC_ALLOW_LAN_HTTP_UPDATES") == "true").toString()

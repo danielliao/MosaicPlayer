@@ -94,6 +94,9 @@ public final class ProgramTimeline {
   private static void collect(JSONObject program, Set<String> ids) throws JSONException {
     JSONArray visual = program.getJSONArray("playlist");
     if (visual.length() == 0) throw new JSONException("节目必须包含画面");
+    JSONObject transition=program.optJSONObject("transition");
+    if(program.has("transition")&&transition==null)throw new JSONException("Invalid transition");
+    if(transition!=null){String type=transition.optString("type");double duration=transition.optDouble("durationMs",Double.NaN),shortest=Double.POSITIVE_INFINITY;for(int n=0;n<visual.length();n++)shortest=Math.min(shortest,visual.getJSONObject(n).getDouble("durationMs"));if(!Arrays.asList("cut","fade").contains(type)||!Double.isFinite(duration)||duration!=Math.rint(duration)||duration<0||duration>2000||"cut".equals(type)&&duration!=0||"fade".equals(type)&&(duration<100||duration>shortest/2))throw new JSONException("Invalid transition");}
     for (String key : new String[] {"playlist", "music"}) {
       JSONArray list = program.optJSONArray(key);
       if (list == null) continue;

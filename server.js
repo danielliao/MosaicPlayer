@@ -167,7 +167,7 @@ app.post("/api/local-session", (req, res) => {
     return res.status(403).json({ error: "远程管理请使用管理密钥登录" });
   res.json({ token: adminToken });
 });
-app.get("/api/state", auth, (req, res) =>
+app.get("/api/state", auth, (req,res,next)=>{if(req.identity.role==='player'&&state.layout.mode==='freeform'&&!String(req.headers['x-mosaic-capabilities']||'').split(',').includes('freeform'))return res.status(409).json({error:'请升级播放器以支持混合布局'});next();}, (req, res) =>
   res.json({
     state:
       req.identity.role === "admin"
@@ -237,6 +237,7 @@ app.post("/api/pair", (req, res) => {
 app.put("/api/layout", admin, (req, res, next) => {
   try {
     if (pending) throw new Error("请等待素材准备完成后再修改布局");
+    if(req.body?.mode==='freeform'&&[...clients].some(c=>c.role==='player'&&!c.capabilities?.includes('freeform')))throw Object.assign(new Error('请升级所有在线播放器以支持混合布局'),{status:409});
     state.layout = validateLayout(req.body, state.layout.screens);
     save();
     for (const c of clients)
@@ -501,6 +502,8 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
+  identity.capabilities=String(req.headers['x-mosaic-capabilities']||url.searchParams.get('capabilities')||'').split(',');
+  if(identity.role==='player'&&state.layout.mode==='freeform'&&!identity.capabilities.includes('freeform')){socket.write('HTTP/1.1 409 Conflict\r\n\r\n');socket.destroy();return;}
   wss.handleUpgrade(req, socket, head, (ws) =>
     wss.emit("connection", ws, identity),
   );

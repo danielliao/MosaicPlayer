@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {SegmentTracker,ProofQueue,proofNamespace} from '../public/proof.js';
+import {programCursor} from '../public/program.js';
+import {FrozenTransition} from '../public/transitions.js';
 import {BrowserProgram} from '../public/browser-program.js';
 
 class FakeAudio {
@@ -81,7 +84,7 @@ function playerHarness({response={ok:false,status:503},restore=null}={}){
   const element=tag=>({tagName:tag.toUpperCase(),style:{},hidden:false,textContent:'',removed:false,paused:true,readyState:2,currentTime:0,classList:{remove(){},add(){}},replaceChildren(...children){this.children=children},remove(){this.removed=true},removeAttribute(){},load(){},pause(){this.paused=true},play(){this.paused=false;return Promise.resolve()}});
   class StubProgram{constructor(){this.supported=true;this.assets=new Map();this.presentedID=null;}restore(){return restoreGate.promise}effective(){return null}receive(){}revoke(){this.assets.clear();this.presentedID=null;}videoVolume(){return 0}}
   class Socket{static OPEN=1;static CLOSED=3;constructor(){this.readyState=1;this.sent=[];sockets.push(this)}send(value){this.sent.push(JSON.parse(value))}}
-  const context=vm.createContext({BrowserProgram:StubProgram,WebSocket:Socket,URLSearchParams,location:{search:'?key=fixture-key&screen=s1',protocol:'https:',host:'fixture.invalid'},performance:{timeOrigin:1000,now:()=>1000},document:{querySelector:s=>{if(!nodes.has(s))nodes.set(s,element('div'));return nodes.get(s)},createElement:tag=>{const el=element(tag);created.push(el);return el;},addEventListener(){},body:element('body')},navigator:{},window:{addEventListener(){}},setInterval(fn){intervals.push(fn)},setTimeout(fn){timers.set(++timerId,fn);return timerId},clearTimeout(id){timers.delete(id)},innerWidth:100,innerHeight:100,fetch:async(...args)=>{fetches.push(args);if(response instanceof Error)throw response;return response},geometry:()=>({offsetX:0,offsetY:0,scale:1,wallWidth:100,wallHeight:100,x:0,y:0}),console});
+  const context=vm.createContext({FrozenTransition,requestAnimationFrame:()=>{},SegmentTracker,ProofQueue,proofNamespace,programCursor,BrowserProgram:StubProgram,WebSocket:Socket,URLSearchParams,location:{search:'?key=fixture-key&screen=s1',protocol:'https:',host:'fixture.invalid'},performance:{timeOrigin:1000,now:()=>1000},document:{querySelector:s=>{if(!nodes.has(s))nodes.set(s,element('div'));return nodes.get(s)},createElement:tag=>{const el=element(tag);created.push(el);return el;},addEventListener(){},body:element('body')},navigator:{},window:{addEventListener(){}},setInterval(fn){intervals.push(fn)},setTimeout(fn){timers.set(++timerId,fn);return timerId},clearTimeout(id){timers.delete(id)},innerWidth:100,innerHeight:100,fetch:async(...args)=>{fetches.push(args);if(response instanceof Error)throw response;return response},geometry:()=>({offsetX:0,offsetY:0,scale:1,wallWidth:100,wallHeight:100,x:0,y:0}),console});
   vm.runInContext(playerSource,context);
   if(restore!==null)restoreGate.resolve(restore);
   return {context,nodes,created,intervals,fetches,sockets,restoreGate,run:code=>vm.runInContext(code,context)};

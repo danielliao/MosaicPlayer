@@ -17,7 +17,7 @@ export function compileProgram(body,timezone,now=Date.now(),options={}){
       const overnight=Temporal.PlainTime.compare(endTime,startTime)<0;
       const zoned=(date,time)=>Temporal.ZonedDateTime.from({timeZone:timezone,year:date.year,month:date.month,day:date.day,hour:time.hour,minute:time.minute},{disambiguation:'compatible'}).epochMilliseconds;
       const start=zoned(day,startTime),finish=zoned(overnight?day.add({days:1}):day,endTime);
-      if(finish>start&&finish>now&&start<horizon.toZonedDateTime(timezone).epochMilliseconds)intervals.push({start,end:finish,program:slot.program,slotId:slot.id||slot.name});
+      if(finish>start&&finish>now&&start<horizon.toZonedDateTime(timezone).epochMilliseconds)intervals.push({start,end:finish,program:slot.cleared===true?body.defaultProgram:slot.program,slotId:slot.id||slot.name});
     }
   }
   intervals.sort((a,b)=>a.start-b.start);for(let i=1;i<intervals.length;i++)if(intervals[i].start<intervals[i-1].end)throw new Error('时段重叠 overlap');

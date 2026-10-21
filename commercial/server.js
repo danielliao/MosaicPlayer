@@ -12,6 +12,11 @@ import {installMedia} from './media.js';
 import {installPrograms} from './programs.js';
 import {deviceSystem} from './devices.js';
 import {installReleases} from './releases.js';
+import {installDesigner} from './designer.js';
+import {installRetail} from './retail.js';
+import {installIntake} from './intake.js';
+import {installAI} from './ai.js';
+import {installIntegrations} from './integrations.js';
 const root=path.resolve(import.meta.dirname,'..');
 export async function createCommercial(options={}){
  const pool=options.pool||newPool(),dataDir=path.resolve(options.dataDir||process.env.COMMERCIAL_DATA_DIR||path.join(root,'output/commercial-development/data'));
@@ -32,6 +37,11 @@ export async function createCommercial(options={}){
  await installMedia({app,route,pool,dataDir,authorize,broadcast:device.broadcast});
  programs=installPrograms({route,pool,dataDir,broadcast:device.broadcast,prepareTimeoutMs:options.prepareTimeoutMs||Number(process.env.COMMERCIAL_PREPARE_TIMEOUT_MS)||120000});
  await installReleases({app,route,authorize,pool,dataDir,broadcast:device.broadcast});
+ const ai=await installAI({route,pool,dataDir,enabled:options.aiEnabled,allowHosts:options.aiAllowedHosts,provider:options.aiProvider});
+ installIntegrations({app,route,pool,programs,ai});
+ const intake=installIntake({route,pool,dataDir});
+ const designer=installDesigner({route,pool,dataDir});
+ installRetail({route,programs});
  const downloads=options.downloadDir||process.env.COMMERCIAL_DOWNLOAD_DIR;
  app.get(['/downloads/mosaic-player.apk','/downloads/mosaic-player-macos.zip'],(req,res)=>{if(!downloads)return res.status(404).json({error:'安装包暂不可用'});const filename=req.path.endsWith('.apk')?'mosaic-player.apk':'mosaic-player-macos.zip';res.set('Content-Disposition',`attachment; filename="${filename}"`);res.type(filename.endsWith('.apk')?'application/vnd.android.package-archive':'application/zip');res.sendFile(path.resolve(downloads,filename),{dotfiles:'deny'},error=>{if(error&&!res.headersSent)res.status(404).json({error:'安装包暂不可用'});});});
  app.use('/downloads',(req,res)=>res.status(404).json({error:'资源不存在'}));
@@ -40,7 +50,10 @@ export async function createCommercial(options={}){
  app.use((req,res)=>res.status(404).json({error:'资源不存在'}));
  app.use((e,req,res,next)=>{if(res.headersSent)return next(e);let status=e.status||400,message=e.message;if(['23505','23503'].includes(e.code)){status=409;message=e.code==='23505'?'资源已存在、配对已使用或屏幕已占用':'资源仍被引用或目标不属于当前租户';}else if(e.code==='22P02'){status=400;message='资源 ID 格式无效';}else if(e.code==='42501'){status=403;message='权限不足';}else if(e.code==='LIMIT_FILE_SIZE'){status=413;message='文件超过大小限制';}else if(e.code&&String(e.code).length===5){status=500;message='数据库操作失败';console.error('Commercial database error',e.code);}res.status(status).json({error:message||'请求失败'});});
  let running=false;const tick=async()=>{if(running)return;running=true;try{await programs.tick();}finally{running=false;}};const timer=options.startWorker===false?null:setInterval(()=>tick().catch(e=>console.error('Commercial worker failure:',e.code||e.name)),250);timer?.unref();
- return {app,server,pool,dataDir,tick,...device,close:async()=>{if(timer)clearInterval(timer);device.close();await new Promise(r=>server.close(r));if(!options.pool)await pool.end();}};
+ const aiTimer=options.startWorker===false?null:setInterval(()=>ai.tick().catch(e=>console.error('AI worker failure:',e.code||e.name)),1000);aiTimer?.unref();
+ const designerTimer=options.startWorker===false?null:setInterval(()=>designer.tick().catch(e=>console.error('Design worker failure:',e.code||e.name)),1000);designerTimer?.unref();
+ const intakeTimer=options.startWorker===false?null:setInterval(()=>intake.tick().catch(e=>console.error('Intake worker failure:',e.code||e.name)),1000);intakeTimer?.unref();
+ return {app,server,pool,dataDir,tick,intakeTick:intake.tick,designerTick:designer.tick,aiTick:ai.tick,...device,close:async()=>{if(timer)clearInterval(timer);if(aiTimer)clearInterval(aiTimer);if(intakeTimer)clearInterval(intakeTimer);if(designerTimer)clearInterval(designerTimer);await Promise.all([ai.close(),intake.close(),designer.close()]);device.close();await new Promise(r=>server.close(r));if(!options.pool)await pool.end();}};
 }
 export async function start(){const service=await createCommercial();const port=Number(process.env.COMMERCIAL_PORT)||3220,host=process.env.COMMERCIAL_HOST||'0.0.0.0';let advertisement;service.server.listen(port,host,()=>{console.log(`Mosaic commercial listening on ${port}`);if(process.platform==='darwin'&&process.env.COMMERCIAL_DISCOVERY_ADVERTISE!=='0'&&!['127.0.0.1','::1'].includes(host)){advertisement=spawn('/usr/bin/dns-sd',['-R',process.env.COMMERCIAL_SERVER_NAME||`Mosaic-${hostname().split('.')[0]}`,'_mosaic-player._tcp','local.',String(port),'version=2'],{stdio:'ignore'});advertisement.on('error',()=>console.warn('Bonjour unavailable; manual server address remains supported.'));}});process.once('exit',()=>advertisement?.kill());for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{advertisement?.kill();service.close().then(()=>process.exit(0));});return service;}
 if(import.meta.url===`file://${process.argv[1]}`)await start();
