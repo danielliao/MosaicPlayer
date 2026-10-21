@@ -9,6 +9,7 @@ import {tenantActive,quota,groupFor,deviceFor,operators,viewers,publicDevice,aut
 import {dependencies} from './schedule.js';
 import {mediaPublic,permittedMedia,probe} from './media.js';
 import {receipt} from './programs.js';
+import {collectPlayEvents} from './proof.js';
 export function deviceSystem({app,server,pool,dataDir,route,authorize,serverId}){
  const clients=new Set(),pairLimit=limiter(30,60000);
  const activeCommands=async(c,i)=>{const tenant=await one(c,'SELECT * FROM tenants WHERE id=$1',[i.tenantId]);if(!tenant||tenant.status!=='active'||tenant.expires_at&&tenant.expires_at.getTime()<=Date.now())return [];return (await rows(c,"SELECT * FROM commands WHERE device_id=$1 AND status IN ('queued','available','downloading','awaiting_confirmation','installing') AND expires_at>now() ORDER BY created_at",[i.id])).filter(x=>(!x.body.activateAt||Number(x.body.activateAt)<=Date.now())&&Number(x.body.bindingRevision||0)===Number(i.bindingRevision||0)).map(x=>({id:x.id,type:x.type,...x.body}));};
@@ -36,6 +37,7 @@ export function deviceSystem({app,server,pool,dataDir,route,authorize,serverId})
  const deviceOnly=i=>{if(!i.isDevice)throw httpError(403,'需要设备凭据');};
  route('get','/api/state',null,async(c,i)=>{deviceOnly(i);return {state:await state(c,i),serverTime:Date.now()};});
  route('get','/api/device/state',null,async(c,i)=>{deviceOnly(i);return {state:await state(c,i),serverTime:Date.now(),commands:await activeCommands(c,i)};});
+ route('post','/api/device/play-events',null,(c,i,r)=>collectPlayEvents(c,i,r.body));
  route('post','/api/device/report',null,async(c,i,r)=>{deviceOnly(i);if(['ready','failed'].includes(r.body.type))await receipt(c,i,r.body);else await report(c,i,r.body);r.afterCommit.push(()=>broadcast(i.tenantId,i.groupId));return {ok:true};});
  route('post','/api/devices/:id/screenshot',operators,async(c,i,r)=>{await tenantActive(c,i);const d=await deviceFor(c,i,r.params.id);if(!d.last_seen||Date.now()-d.last_seen.getTime()>30000)throw httpError(409,'设备离线');if(!d.capabilities.includes('screenshot'))throw httpError(409,'设备不支持截屏');const previous=await one(c,"SELECT created_at FROM commands WHERE device_id=$1 AND type='screenshot' ORDER BY created_at DESC LIMIT 1",[d.id]);if(previous&&Date.now()-previous.created_at.getTime()<5000)throw httpError(429,'截屏间隔至少 5 秒');const id=randomUUID();await c.query("INSERT INTO commands(id,tenant_id,device_id,type,body,expires_at)VALUES($1,$2,$3,'screenshot',$4,now()+interval '1 minute')",[id,i.tenantId,d.id,{maxWidth:960,maxHeight:960,maxBytes:256*1024,bindingRevision:d.binding_revision||0}]);await audit(c,i,'screenshot.request',d.id,{storeId:d.store_id});r.afterCommit.push(()=>broadcast(i.tenantId,d.group_id));return {id,requestId:id,status:'queued'};});
  route('get','/api/devices/:id/screenshots',viewers,async(c,i,r)=>{const d=await deviceFor(c,i,r.params.id);return (await rows(c,"SELECT id,request_id,captured_at,metadata,created_at FROM screenshots WHERE device_id=$1 AND store_id=$2 AND created_at>now()-interval '7 days' ORDER BY created_at DESC LIMIT 10",[d.id,d.store_id])).map(s=>({...camel(s),url:`/api/screenshots/${s.id}/image`}));});

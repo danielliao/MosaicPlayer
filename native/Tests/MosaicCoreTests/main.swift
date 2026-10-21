@@ -12,6 +12,30 @@ func expectNil<T>(_ value: T?) { if value != nil { fail("expected nil") } }
 func expectThrows<T>(_ body: @autoclosure () throws -> T) { do { _ = try body(); fail("expected error") } catch {} }
 
 final class CoreChecks {
+    func testPlaybackEvidence() {
+        var tracker=EvidenceTracker(),events=[PlaybackEvidence]()
+        for n in stride(from:0,through:3000,by:100) {
+            if let e=tracker.observe(EvidenceSample(mediaId:"same",programId:"p",control:"p",startAt:Int64(n/1000*1000),durationMs:1000,now:Double(n),ready:true)){events.append(e)}
+        }
+        expectEqual(events.map(\.startAt),[Int64(0),1000,2000])
+        for wraps in [false,true] {
+            var videoTracker=EvidenceTracker(),count=0
+            for n in stride(from:0,through:1000,by:100) {
+                var sample=EvidenceSample(mediaId:"v",programId:"p",control:"p",startAt:Int64(n/1000*1000),durationMs:1000,now:Double(n),ready:true)
+                sample.video=true;sample.sourceDurationMs=1000;sample.positionMs=Double(wraps ? n%1000:min(n,950))
+                if videoTracker.observe(sample) != nil {count+=1}
+            }
+            expectEqual(count,wraps ? 1:0)
+        }
+        for scenario in 0..<4 {
+            var t=EvidenceTracker(),count=0
+            for n in stride(from:scenario==0 ? 100:0,through:1000,by:100) {
+                if scenario==2 && n>=400 && n<=700 {continue}
+                if t.observe(EvidenceSample(mediaId:"a",programId:"p",control:scenario==3 && n>=500 ? "changed":"p",startAt:Int64(n/1000*1000),durationMs:1000,now:Double(n),ready:!(scenario==1 && n==500))) != nil {count+=1}
+            }
+            expectEqual(count,0)
+        }
+    }
     func testFreeform() throws {
         let json = """
         {"mode":"freeform","canvasWidth":4280,"canvasHeight":1920,"cols":3,"rows":1,"tileWidth":1920,"tileHeight":1080,"gapX":0,"gapY":0,"screens":[{"id":"a","name":"A","row":0,"col":0,"x":0,"y":0,"width":1920,"height":1080,"rotation":0},{"id":"b","name":"B","row":0,"col":1,"x":1920,"y":0,"width":1080,"height":1920,"rotation":90},{"id":"c","name":"C","row":0,"col":2,"x":3000,"y":0,"width":1280,"height":720,"rotation":270}]}
@@ -132,6 +156,7 @@ final class CoreChecks {
 
 let suite = CoreChecks()
 let checks: [(String, () throws -> Void)] = [
+    ("observed completions exclude partial joins stalls pauses and control changes", suite.testPlaybackEvidence),
     ("heterogeneous geometry and overlap validation", suite.testFreeform),
     ("manual server normalization and unsafe URL rejection", suite.testServerAddressNormalization),
     ("bounded private subnet discovery", suite.testDiscoverySubnetIsBoundedAndPrivate),

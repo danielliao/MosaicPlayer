@@ -10,6 +10,7 @@ import MosaicCore
     let image: CGImage?
     var preparationID: String?
     var scheduledRevision: Int?
+    var evidenceObservation: NSKeyValueObservation?
     init(media: MediaAsset, url: URL, player: AVQueuePlayer? = nil, looper: AVPlayerLooper? = nil, image: CGImage? = nil) {
         self.media = media; self.url = url; self.player = player; self.looper = looper; self.image = image
     }
@@ -84,6 +85,7 @@ import MosaicCore
         onChange?()
     }
     func disconnect() {
+        proof.reset()
         programs.reset(); transport.disconnect(); clearMedia(); state = nil; screen = nil; connected = false
         status = "idle"; detail = "已断开，可粘贴新的设备链接。"; networkDetail = "尚未连接"; onChange?()
     }
@@ -141,6 +143,12 @@ import MosaicCore
                     let player = AVQueuePlayer(); player.isMuted = true; player.automaticallyWaitsToMinimizeStalling = false
                     let looper = AVPlayerLooper(player: player, templateItem: item)
                     loaded = LoadedMedia(media: media, url: url, player: player, looper: looper)
+                    loaded.evidenceObservation = player.observe(\.timeControlStatus,options:[.new]) { [weak self, weak player] _, change in
+                        guard change.newValue != .playing else { return }
+                        Task { @MainActor [weak self, weak player] in
+                            if let self, let player, self.current?.player === player { self.proof.reset() }
+                        }
+                    }
                     let deadline = CACurrentMediaTime() + 10
                     while player.currentItem?.status != .readyToPlay {
                         try Task.checkCancellation()
@@ -201,7 +209,20 @@ import MosaicCore
             load(media, tag: "current:\(mediaID)", preparationID: nil)
         }
     }
+    private let proof = ProofReporter()
+    private func observeProof() {
+        let now=transport.serverNow,p=state?.playback,cursor=state?.program?.cursor(at:now)
+        let duration=Int64(((cursor?.duration ?? current?.media.duration ?? 0)*1000).rounded())
+        let epoch=p?.epoch ?? 0
+        let start=cursor?.epoch ?? (duration>0 ? epoch+floor((now-epoch)/Double(duration))*Double(duration) : 0)
+        let ready=current?.media.id==p?.mediaId && p?.paused==false && status=="playing" && !seeking && now>=epoch && (transport.clockReady || !connected && programs.manifestID != nil) && (current?.image != nil || (current?.player?.timeControlStatus == .playing && (renderInfo?()["videoReady"] as? Bool)==true && abs(drift ?? 0)<180))
+        var sample=EvidenceSample(mediaId:current?.media.id ?? "",programId:programs.manifestID,control:programs.manifestID ?? "direct:\(p?.revision ?? -1)",startAt:Int64(start.rounded()),durationMs:duration,now:now,ready:ready && (cursor != nil || current?.media.type=="video"))
+        sample.video=current?.media.type=="video";sample.positionMs=(current?.player?.currentTime().seconds ?? 0)*1000;sample.sourceDurationMs=(current?.media.duration ?? 0)*1000
+        proof.observe(sample,connection:transport.connection)
+    }
     private func tick() {
+        observeProof()
+        defer { observeProof() }
         if let id = transport.connection?.screenID, let effective = programs.tick(now: transport.serverNow, screenID: id) { self.state = effective }
         // A preparation arriving during the retry cooldown still needs to start
         // once the cooldown expires; there may be no further state broadcasts.
@@ -246,7 +267,7 @@ import MosaicCore
     }
     private func seek(_ media: LoadedMedia, target: Double, resume: Bool) {
         guard let player = media.player else { return }
-        seeking = true
+        proof.reset(); seeking = true
         Task { @MainActor [weak self, weak media] in
             let finished = await player.seek(to: CMTime(seconds: target, preferredTimescale: 60_000), toleranceBefore: .zero, toleranceAfter: .zero)
             guard let self, let media, self.current === media else { return }
@@ -298,7 +319,7 @@ import MosaicCore
         if rendered {
             programs.presentedID = programs.manifestID
         }
-        let report: [String: Any] = ["type": "report", "client": "native-macos", "version": "0.4.0", "capabilities": ["programs", "audio", "screenshot", "freeform"], "programId": programs.presentedID as Any? ?? NSNull(), "mediaId": current?.media.id as Any? ?? NSNull(), "drift": drift as Any? ?? NSNull(),
+        let report: [String: Any] = ["type": "report", "client": "native-macos", "version": "0.5.0", "capabilities": ["programs", "audio", "screenshot", "freeform"], "programId": programs.presentedID as Any? ?? NSNull(), "mediaId": current?.media.id as Any? ?? NSNull(), "drift": drift as Any? ?? NSNull(),
                                      "playbackRevision": rendered ? (state?.playback.revision as Any? ?? NSNull()) : NSNull(),
                                      "rtt": transport.latency as Any? ?? NSNull(), "status": status, "width": Int(size.width), "height": Int(size.height)]
         transport.send(report)

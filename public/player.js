@@ -1,4 +1,6 @@
 import { positionAt, correction, geometry, estimateOffset } from "./sync.js";
+import { SegmentTracker, ProofQueue, proofNamespace } from "./proof.js";
+import { programCursor } from "./program.js";
 import { BrowserProgram } from "./browser-program.js";
 const $ = (s) => document.querySelector(s),
   query = new URLSearchParams(location.search),
@@ -84,6 +86,7 @@ function load(media) {
     el.onerror = () =>
       finish(new Error("无法解码素材，请使用 H.264 MP4 或常见图片格式"));
     if (media.type === "video") {
+      for (const event of ["waiting","seeking","pause","error"]) el.addEventListener?.(event,()=>{if(current?.el===el)proofTracker.reset();});
       el.muted = true;
       el.defaultMuted = true;
       el.loop = true;
@@ -297,7 +300,7 @@ async function connect() {
   };
 }
 let playAttempt = false;
-function tick() {
+function playbackTick() {
   if (revoked) return;
   const effective = programs.effective(synced());
   if (effective) { const changed = state?.playback?.mediaId !== effective.playback.mediaId; state = effective; screen = state.layout.screens.find(s => s.id === screenId); if (changed) apply(); }
@@ -344,7 +347,7 @@ function tick() {
     if (Math.abs(fix.drift) > 0.04) el.currentTime = target;
     status = "paused";
   } else {
-    if (fix.seek) el.currentTime = target;
+    if (fix.seek) { proofTracker.reset(); el.currentTime = target; }
     el.playbackRate = fix.seek ? 1 : fix.rate;
     if (el.paused && !playAttempt) {
       playAttempt = true;
@@ -368,6 +371,23 @@ function tick() {
       `${status === "paused" ? "已暂停" : "同步播放中"} · 偏差 ${Math.abs(lastDrift).toFixed(0)} ms · 时钟往返 ${rtt?.toFixed(1) || "—"} ms`,
     );
 }
+const proofTracker = new SegmentTracker();
+let proofStore;try{proofStore=localStorage;}catch{proofStore={getItem:()=>null,setItem:()=>{}};}
+const proofQueue=new ProofQueue(proofStore,proofNamespace(location.origin+"/"+screenId+"/"+key));
+let proofUploading=false;
+function observeProof(){
+    const now=synced(),p=state?.playback,program=programs.active?.program,cursor=program?programCursor(program,now):null;
+    const durationMs=Math.round((cursor?.duration||current?.media.duration||0)*1000);
+    const startAt=cursor?Math.round(cursor.epoch):p&&durationMs?Math.round(p.epoch)+Math.floor((now-p.epoch)/durationMs)*durationMs:0;
+    const ready=!revoked&&clockReady&&document.visibilityState==='visible'&&current?.id===p?.mediaId&&!p?.paused&&status==='playing'&&!latestError&&(current.media.type==='image'||current.el.readyState>=3&&!current.el.paused&&!current.el.seeking&&Math.abs(lastDrift||0)<180);
+    const event=proofTracker.observe({now,startAt,durationMs,video:current?.media.type==='video',positionMs:(current?.el.currentTime||0)*1000,sourceDurationMs:(current?.el.duration||current?.media.duration||0)*1000,mediaId:current?.id,programId:program?.id||null,control:program?.id||`direct:${p?.revision}`,ready:ready&&(Boolean(cursor)||current?.media.type==='video')});
+    if(event)proofQueue.add(event);
+}
+function tick(){observeProof();try{playbackTick();}finally{observeProof();}}
+setInterval(async()=>{
+  if(revoked||proofUploading)return;const events=proofQueue.batch();if(!events.length)return;proofUploading=true;
+  try{const r=await fetch('/api/device/play-events',{method:'POST',headers:{Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify({events}),redirect:'error',signal:AbortSignal.timeout(12000)});if(r.ok)proofQueue.acknowledge(await r.json());}catch{}finally{proofUploading=false;}
+},10000);
 setInterval(tick, 100);
 setInterval(ping, 3000);
 setInterval(

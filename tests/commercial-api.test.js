@@ -66,3 +66,29 @@ test('freeform remains tenant scoped and requires upgraded players for edit, bin
  assert.deepEqual(changed.layout.screens.map(s=>s.id),g.layout.screens.map(s=>s.id));
  assert.equal(changed.layout.screens.some(s=>'key' in s),false);
 });
+
+test('completed playback events dedupe, preserve tenant scope, exclude heartbeat and reject stale bindings',async()=>{
+ const other=(await json('/api/groups',a)).find(g=>g.name==='Other');
+ const g=await json('/api/groups',a,{name:'Proof fixture',storeId:other.storeId});
+ await json('/api/devices/'+deviceA.deviceId,a,{groupId:g.id,screenId:g.layout.screens[0].id},'PUT');
+ const now=Date.now(),mediaId='proof-'+suffix,foreign='foreign-proof-'+suffix;
+ for(const [id,tenant] of [[mediaId,a.user.tenantId],[foreign,b.user.tenantId]])await owner.query('INSERT INTO media(id,tenant_id,metadata,filename,size)VALUES($1,$2,$3,$4,1)',[id,tenant,{id,type:'video',duration:1,width:1920,height:1080},id+'.mp4']);
+ await owner.query("UPDATE devices SET binding_changed_at=$2 WHERE id=$1",[deviceA.deviceId,new Date(now-10000)]);
+ await owner.query('UPDATE groups SET playback=$2 WHERE id=$1',[g.id,{mediaId,epoch:now-10000,paused:false,position:0,revision:1}]);
+ const e={eventId:randomUUID(),mediaId,programId:null,startAt:now-2000,endAt:now-1000,durationMs:1000,tenantId:b.user.tenantId,storeId:storeB.id};
+ const send=events=>deviceRequest('/api/device/play-events',{events});
+ assert.equal((await request('/api/device/play-events',a,{events:[e]})).status,403);
+ assert.equal((await send(Array(51).fill(e))).status,400);
+ assert.deepEqual((await(await send([e])).json()).accepted,[e.eventId]);
+ assert.deepEqual((await(await send([e])).json()).accepted,[e.eventId]);
+ const row=(await owner.query('SELECT * FROM playback_events WHERE event_id=$1',[e.eventId])).rows[0];assert.equal(row.tenant_id,a.user.tenantId);assert.equal(row.group_id,g.id);assert.equal(row.store_id,g.storeId);
+ const overlap=await(await send([{...e,eventId:randomUUID()}])).json();assert.equal(overlap.rejected[0].reason,'overlapping_segment');
+ const bad=await(await send([{...e,eventId:randomUUID(),mediaId:foreign}])).json();assert.equal(bad.rejected[0].reason,'unauthorized_segment');
+ assert.equal((await tx(pool,{tenantId:b.user.tenantId},c=>c.query('SELECT * FROM playback_events'))).rowCount,0);
+ await deviceRequest('/api/device/report',{status:'playing',mediaId});assert.equal(Number((await owner.query('SELECT count(*) FROM playback_events WHERE device_id=$1',[deviceA.deviceId])).rows[0].count),1);
+ const programId=randomUUID(),manifest={id:programId,activateAt:now-8000,validUntil:now+100000,defaultProgram:{playlist:[{mediaId,durationMs:1000}],music:[],audioMode:'muted',volume:0},intervals:[]};
+ await owner.query("INSERT INTO deployments(id,tenant_id,group_id,manifest,activate_at,deadline,status)VALUES($1,$2,$3,$4,$5,$6,'active')",[programId,a.user.tenantId,g.id,manifest,new Date(now-8000),new Date(now+60000)]);
+ const historical={...e,eventId:randomUUID(),programId,startAt:now-5000,endAt:now-4000};assert.deepEqual((await(await send([historical])).json()).accepted,[historical.eventId]);
+ await json('/api/devices/'+deviceA.deviceId,a,{groupId:other.id,screenId:other.layout.screens[0].id},'PUT');
+ assert.equal((await(await send([{...historical,eventId:randomUUID()}])).json()).rejected[0].reason,'binding_changed');
+});
